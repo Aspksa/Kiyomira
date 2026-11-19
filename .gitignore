@@ -1,5 +1,6 @@
 node_modules/
 06-Данные/
+09-Окружение/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

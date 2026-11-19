@@ -1,7 +1,7 @@
 name: Проверка ядра TypeScript
 on:
   push:
-    branches: [main, 'feature/**']
+    branches: [main, 'feature/**', 'fix/**']
   pull_request:
 jobs:
   тесты:
@@ -13,24 +13,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-      - name: Проверить тесты
+          node-version: '24.21.0'
+      - name: Проверить TypeScript
         run: npm test
-      - name: Проверить запуск
+      - name: Проверить одиночный запуск
         run: npm start
-      - name: Проверить BAT из папки со спецсимволами
+      - name: Проверить переносимый запуск Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $source = (Get-Location).Path
           $folder = Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
           New-Item -ItemType Directory -Path $folder -Force | Out-Null
-          Copy-Item -LiteralPath (Join-Path $source 'Kiyomira.bat') -Destination $folder
-          Copy-Item -LiteralPath (Join-Path $source 'Kiyomira.cjs') -Destination $folder
+          foreach ($name in 'Kiyomira.bat', 'Kiyomira.ps1', 'Kiyomira.cjs', 'package.json') {
+            Copy-Item -LiteralPath (Join-Path $source $name) -Destination $folder
+          }
           foreach ($name in '08-Запуск', '01-Ядро', '02-Память', '03-Задачи', '04-Модели') {
             Copy-Item -LiteralPath (Join-Path $source $name) -Destination $folder -Recurse
           }
-          Copy-Item -LiteralPath (Join-Path $source 'package.json') -Destination $folder
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Kiyomira.ps1'), [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          $nodeDir = Join-Path $folder '09-Окружение/Нода'
+          New-Item -ItemType Directory -Path $nodeDir -Force | Out-Null
+          Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $nodeDir 'node.exe')
           Push-Location $folder
           try {
             '/exit' | & '.\Kiyomira.bat'
