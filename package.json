@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node --experimental-transform-types 01-Ядро/01-Запуск.ts",
-    "test": "node --experimental-transform-types --test 05-Проверки/01-Ядро.test.ts 05-Проверки/02-ПамятьИОблако.test.ts 05-Проверки/03-Запуск.test.cjs",
+    "test": "node --experimental-transform-types --test 05-Проверки/01-Ядро.test.ts 05-Проверки/02-ПамятьИОблако.test.ts 05-Проверки/03-Запуск.test.cjs 05-Проверки/04-РезервSQLite.test.cjs",
     "preflight": "node 08-Запуск/02-Предпроверка.cjs"
   }
 }
