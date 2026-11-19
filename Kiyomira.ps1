@@ -144,9 +144,22 @@ function Install-Package([string]$url,[string]$hash,[string]$destination,[string
     if (-not (Test-Path -LiteralPath (Join-Path $source $exe))) { throw 'Runtime executable missing in archive' }
     Fingerprint $source
     if (-not (Verify-Files $source)) { throw 'Runtime integrity check failed before activation' }
-    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-    if (Test-Path -LiteralPath $destination) { Move-Item -LiteralPath $destination -Destination $old }
+    # Keep the previous reserve until the new executable has passed all checks.
+    $older = "$destination.резерв-предыдущий"
+    if ((Test-Path -LiteralPath $older) -and (Test-Path -LiteralPath $old)) {
+      throw 'Two existing backups: manual review required before update'
+    }
+    $movedOlder = $false
+    $movedCurrent = $false
     try {
+      if (Test-Path -LiteralPath $old) {
+        Move-Item -LiteralPath $old -Destination $older
+        $movedOlder = $true
+      }
+      if (Test-Path -LiteralPath $destination) {
+        Move-Item -LiteralPath $destination -Destination $old
+        $movedCurrent = $true
+      }
       Move-Item -LiteralPath $source -Destination $destination
       $output = (& (Join-Path $destination $exe) --version 2>&1 | Out-String).Trim()
       $expected = if ($mode -eq 'node') { "v$version" } else { "Python $version" }
@@ -154,11 +167,18 @@ function Install-Package([string]$url,[string]$hash,[string]$destination,[string
         throw 'New runtime failed validation'
       }
     } catch {
-      if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
-      if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination $destination }
+      if (Test-Path -LiteralPath $destination) {
+        Remove-Item -LiteralPath $destination -Recurse -Force
+      }
+      if ($movedCurrent -and (Test-Path -LiteralPath $old)) {
+        Move-Item -LiteralPath $old -Destination $destination
+      }
+      if ($movedOlder -and (Test-Path -LiteralPath $older)) {
+        Move-Item -LiteralPath $older -Destination $old
+      }
       throw
     }
-    # Successful version remains available as backup until the next update.
+    # Keep older backups rather than deleting verified data before successful use.
     Write-Log ("Activated $mode $version")
   } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
