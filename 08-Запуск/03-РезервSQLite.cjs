@@ -16,15 +16,13 @@ async function создатьРезервнуюКопию(корень = resolve
   const отметка = new Date().toISOString().replace(/[:.]/g, '-');
   const результат = join(папка, префикс + отметка + '-' + randomUUID() + '.sqlite');
   const временный = результат + '.незавершено';
-  const база = new DatabaseSync(путь, { readOnly: true });
   try {
-    await backup(база, временный);
-  } catch (ошибка) {
-    throw new Error('Не удалось сохранить резервную копию SQLite: ' + (ошибка instanceof Error ? ошибка.message : String(ошибка)));
-  } finally {
-    база.close();
-  }
-  try {
+    const база = new DatabaseSync(путь, { readOnly: true });
+    try {
+      await backup(база, временный);
+    } finally {
+      база.close();
+    }
     const проверка = new DatabaseSync(временный, { readOnly: true });
     try {
       const итог = проверка.prepare('PRAGMA integrity_check').all();
