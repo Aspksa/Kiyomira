@@ -38,6 +38,19 @@ function Write-Log([string]$msg) {
   }
   Add-Content -LiteralPath $log -Value $line -Encoding UTF8
 }
+function Classify-Error([System.Exception]$error) {
+  if ($error -is [System.UnauthorizedAccessException]) { return 'ACCESS_DENIED (permissions or security policy)' }
+  if ($error -is [System.Net.WebException]) { return 'NETWORK (internet, proxy or TLS)' }
+  if ($error -is [System.IO.IOException]) {
+    $nativeCode = ($error.HResult -band 0xFFFF)
+    if ($nativeCode -eq 112 -or $nativeCode -eq 39) { return 'DISK_FULL' }
+    if ($nativeCode -eq 5 -or $nativeCode -eq 32) { return 'FILE_ACCESS (locked file, permissions or antivirus)' }
+    return 'FILE_IO (drive, filesystem or removable device)'
+  }
+  if ($error.Message -match 'SHA-256|integrity|checksum') { return 'INTEGRITY' }
+  if ($error.Message -match 'Missing|not found') { return 'MISSING_FILE' }
+  return 'UNKNOWN (see diagnostics)'
+}
 function Stage([string]$msg) {
   Write-Host ("[Kiyomira] " + $msg) -ForegroundColor Cyan
   Write-Log $msg
@@ -92,7 +105,7 @@ function Fetch([string]$url, [string]$file) {
 function Fingerprint([string]$folder) {
   $entries = @()
   Get-ChildItem -LiteralPath $folder -Recurse -File | Where-Object { $_.Name -ne 'проверка-файлов.json' } | ForEach-Object {
-    $relative = $_.FullName.Substring($folder.Length).TrimStart('\','/')
+    $relative = $_.FullName.Substring($folder.Length).TrimStart([char]92,[char]47)
     $entries += [pscustomobject]@{ path = $relative; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
   }
   if ($entries.Count -lt 1) { throw 'Runtime folder is empty' }
@@ -107,7 +120,7 @@ function Verify-Files([string]$folder) {
     $count = 0
     foreach ($item in $info.files) {
       $relative = [string]$item.path
-      if ([IO.Path]::IsPathRooted($relative) -or $relative.Split([char[]]@('\','/')) -contains '..') { return $false }
+      if ([IO.Path]::IsPathRooted($relative) -or ($relative -split '[\\/]') -contains '..') { return $false }
       $file = Join-Path $folder $relative
       if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
       if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne [string]$item.sha256) { return $false }
@@ -258,7 +271,7 @@ try {
   exit $code
 } catch {
   $msg = $_.Exception.Message
-  Write-Host ('Kiyomira setup failed: ' + $msg) -ForegroundColor Red
+  Write-Host ('Kiyomira setup failed [' + (Classify-Error $_.Exception) + ']: ' + $msg) -ForegroundColor Red
   try { Write-Log ('Setup failed: ' + $msg) } catch {}
   exit 1
 } finally {

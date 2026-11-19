@@ -67,3 +67,11 @@ jobs:
             '/exit' | & '.\Kiyomira.bat'
             if ($LASTEXITCODE -ne 0) { throw 'Offline relaunch failed' }
           } finally { Pop-Location }
+          $longBase = Join-Path $env:RUNNER_TEMP ('Д' * 110)
+          $longFolder = Join-Path $longBase ('П' * 106)
+          New-Item -ItemType Directory -Path $longFolder -Force | Out-Null
+          foreach ($sub in '01-Ядро','02-Память','08-Запуск') {
+            Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $longFolder -Recurse
+          }
+          & node (Join-Path $longFolder '08-Запуск/02-Предпроверка.cjs')
+          if ($LASTEXITCODE -ne 0) { throw 'Long Unicode path preflight failed' }
