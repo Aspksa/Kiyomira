@@ -7,7 +7,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "start": "node 01-Ядро/01-Запуск.ts",
-    "test": "node --test 05-Проверки/01-Ядро.test.ts 05-Проверки/02-ПамятьИОблако.test.ts"
+    "start": "node --experimental-transform-types 01-Ядро/01-Запуск.ts",
+    "test": "node --experimental-transform-types --test 05-Проверки/01-Ядро.test.ts 05-Проверки/02-ПамятьИОблако.test.ts"
   }
 }
