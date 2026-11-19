@@ -259,9 +259,11 @@ function Check-Source {
       Copy-Item -LiteralPath $file -Destination $target
       $entries += @{ path = $name; sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash }
     }
-    [IO.File]::WriteAllText($manifest, (($entries | ConvertTo-Json -Depth 5)), (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($manifest, ((@{ files = $entries } | ConvertTo-Json -Depth 5)), (New-Object Text.UTF8Encoding($false)))
   }
-  $entries = @(Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json)
+  $parsed = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  $entries = if ($null -ne $parsed.files) { $parsed.files } else { $parsed }
+  if (-not $entries) { throw 'Recovery manifest is empty' }
   foreach ($entry in $entries) {
     $name = [string]$entry.path
     if ($name -notin $names) { throw 'Unexpected file in recovery manifest' }
