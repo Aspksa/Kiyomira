@@ -1,46 +1,79 @@
-name: Проверка ядра TypeScript
+name: Проверка Kiyomira
 on:
+  pull_request:
   push:
     branches: [main, 'feature/**', 'fix/**']
-  pull_request:
 jobs:
-  тесты:
+  core:
+    name: Ядро TypeScript / ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
-      - name: Проверить TypeScript
+      - name: TypeScript and SQLite unit tests
         run: npm test
-      - name: Проверить одиночный запуск
+      - name: Run self-check
+        run: npm run preflight
+      - name: Start CLI
         run: npm start
-      - name: Проверить переносимый запуск Windows
-        if: runner.os == 'Windows'
+
+  portable_windows:
+    name: Переносимость Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Validate PowerShell syntax, hashes and offline BAT from special paths
         shell: pwsh
         run: |
           $source = (Get-Location).Path
-          $folder = Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
-          New-Item -ItemType Directory -Path $folder -Force | Out-Null
-          foreach ($name in 'Kiyomira.bat', 'Kiyomira.ps1', 'Kiyomira.cjs', 'package.json') {
-            Copy-Item -LiteralPath (Join-Path $source $name) -Destination $folder
+          $name = 'Рабочий стол & (тест) ! ^ % ;'
+          $folder = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          foreach ($file in 'Kiyomira.bat','Kiyomira.ps1','Kiyomira.cjs','package.json') {
+            Copy-Item -LiteralPath (Join-Path $source $file) -Destination $folder
           }
-          foreach ($name in '08-Запуск', '01-Ядро', '02-Память', '03-Задачи', '04-Модели') {
-            Copy-Item -LiteralPath (Join-Path $source $name) -Destination $folder -Recurse
+          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','08-Запуск') {
+            Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $folder -Recurse
           }
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Kiyomira.ps1'), [ref]$null, [ref]$parseErrors) | Out-Null
-          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Kiyomira.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }
           $nodeDir = Join-Path $folder '09-Окружение/Нода'
-          New-Item -ItemType Directory -Path $nodeDir -Force | Out-Null
-          Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $nodeDir 'node.exe')
+          New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+          $installed = (Get-Command node.exe).Source
+          Copy-Item -LiteralPath $installed -Destination (Join-Path $nodeDir 'node.exe')
+          $hash = (Get-FileHash -LiteralPath (Join-Path $nodeDir 'node.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = @{files=@(@{path='node.exe';sha256=$hash})} | ConvertTo-Json -Depth 5
+          [IO.File]::WriteAllText((Join-Path $nodeDir 'проверка-файлов.json'),$manifest,(New-Object Text.UTF8Encoding($false)))
+          $env:KIYOMIRA_OFFLINE='1'
+          $env:KIYOMIRA_SKIP_PYTHON='1'
           Push-Location $folder
           try {
             '/exit' | & '.\Kiyomira.bat'
-            if ($LASTEXITCODE -ne 0) { throw "BAT завершился с кодом $LASTEXITCODE" }
-            if (-not (Test-Path -LiteralPath '.\06-Данные\память.sqlite')) { throw 'SQLite не создана' }
-            if (Test-Path -LiteralPath '.\06-Данные\запуск.lock') { throw 'Осталась блокировка запуска' }
+            if ($LASTEXITCODE -ne 0) { throw "BAT returned $LASTEXITCODE" }
+            if (-not (Test-Path -LiteralPath '06-Данные/память.sqlite')) { throw 'SQLite not created' }
+            if (Test-Path -LiteralPath '06-Данные/запуск.lock') { throw 'Node lock not released' }
+            $cache = Join-Path $folder '09-Окружение/РезервЗагрузчика/контроль.json'
+            if (-not (Test-Path -LiteralPath $cache)) { throw 'Recovery cache missing' }
+            # A second launch must work offline.
+            '/exit' | & '.\Kiyomira.bat'
+            if ($LASTEXITCODE -ne 0) { throw 'Offline relaunch failed' }
           } finally { Pop-Location }
+          $longBase = Join-Path $env:RUNNER_TEMP ('Д' * 110)
+          $longFolder = Join-Path $longBase ('П' * 106)
+          New-Item -ItemType Directory -Path $longFolder -Force | Out-Null
+          foreach ($sub in '01-Ядро','02-Память','08-Запуск') {
+            Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $longFolder -Recurse
+          }
+          & node (Join-Path $longFolder '08-Запуск/02-Предпроверка.cjs')
+          if ($LASTEXITCODE -ne 0) { throw 'Long Unicode path preflight failed' }

@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync, appendFileSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { check } = require('./02-Предпроверка.cjs');
 
 const корень = resolve(__dirname, '..');
 const данные = join(корень, '06-Данные');
@@ -17,6 +18,16 @@ let содержаниеБлокировки = '';
 function журналировать(сообщение) {
   try {
     mkdirSync(данные, { recursive: true });
+    if (existsSync(журнал) && statSync(журнал).size > 2097152) {
+      for (let i = 3; i >= 1; i--) {
+        const before = i === 1 ? журнал : журнал + '.' + (i - 1);
+        if (existsSync(before)) {
+          const after = журнал + '.' + i;
+          if (existsSync(after)) unlinkSync(after);
+          require('node:fs').renameSync(before, after);
+        }
+      }
+    }
     appendFileSync(журнал, `[${new Date().toISOString()}] ${сообщение}\n`, 'utf8');
   } catch (ошибка) {
     console.error('Cannot write launcher diagnostics:', ошибка.message);
@@ -84,7 +95,9 @@ async function запустить() {
   }
   if (!existsSync(вход)) throw new Error('Не найден файл ядра: ' + вход);
   занятьБлокировку();
-  журналировать('Запуск из ' + корень + '; Node ' + process.version);
+  const readiness = check(корень);
+  console.log('[Kiyomira] Предпроверка:', readiness.sqlite === 'ok' ? 'SQLite исправна' : 'Новая база SQLite');
+  журналировать('Предпроверка: ' + readiness.sqlite + '; Node ' + process.version);
   const дочерний = spawn(process.execPath, [
     '--experimental-transform-types', вход, '--interactive'
   ], {
