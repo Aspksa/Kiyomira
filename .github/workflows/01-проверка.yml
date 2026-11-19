@@ -26,6 +26,7 @@ jobs:
           $folder = Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
           New-Item -ItemType Directory -Path $folder -Force | Out-Null
           Copy-Item -LiteralPath (Join-Path $source 'Kiyomira.bat') -Destination $folder
+          Copy-Item -LiteralPath (Join-Path $source 'Kiyomira.cjs') -Destination $folder
           foreach ($name in '08-Запуск', '01-Ядро', '02-Память', '03-Задачи', '04-Модели') {
             Copy-Item -LiteralPath (Join-Path $source $name) -Destination $folder -Recurse
           }
