@@ -1,0 +1,8 @@
+node_modules/
+06-Данные/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.*
+!.env.пример
