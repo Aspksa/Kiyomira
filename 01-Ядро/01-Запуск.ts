@@ -11,6 +11,10 @@ const демонстрация = !ключ;
 const провайдер = демонстрация ? new ТестоваяМодель() : new ОблачнаяМодель(ключ!, модель!);
 const память = new ПамятьДиалога(200, process.env.KIYOMIRA_DB_PATH || '06-Данные/память.sqlite');
 const ядро = new Ядро(провайдер, память);
+// Ctrl+C закрывает поток ввода; блок finally завершает очередь и SQLite.
+for (const сигнал of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(сигнал, () => process.stdin.destroy());
+}
 
 async function диалог(): Promise<void> {
   console.log('Kiyomira — интерактивный чат');
