@@ -178,7 +178,11 @@ function Install-Package([string]$url,[string]$hash,[string]$destination,[string
       }
       throw
     }
-    # Keep older backups rather than deleting verified data before successful use.
+    # After validation, the latest previous runtime is in .резерв.
+    # Only now may an older reserve be removed.
+    if (Test-Path -LiteralPath $older) {
+      Remove-Item -LiteralPath $older -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Log ("Activated $mode $version")
   } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
