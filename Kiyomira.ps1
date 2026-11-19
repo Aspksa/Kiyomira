@@ -1,6 +1,16 @@
 ﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Windows PowerShell 5.1 can inherit PSModulePath from PowerShell 7 (GitHub Actions).
+# Load built-in modules by absolute path if automatic discovery is unavailable.
+if (-not (Get-Command Get-FileHash -ErrorAction SilentlyContinue)) {
+  Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+}
+if (-not (Get-Command Expand-Archive -ErrorAction SilentlyContinue)) {
+  $archiveModule = Join-Path $env:ProgramFiles 'WindowsPowerShell/Modules/Microsoft.PowerShell.Archive/Microsoft.PowerShell.Archive.psd1'
+  if (Test-Path -LiteralPath $archiveModule) { Import-Module $archiveModule -ErrorAction Stop }
+}
+
 $project = $PSScriptRoot
 $runtime = Join-Path $project '09-Окружение'
 $data = Join-Path $project '06-Данные'
