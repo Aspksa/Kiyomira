@@ -6,6 +6,7 @@ const { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync
 const { join, resolve } = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { check } = require('./02-Предпроверка.cjs');
+const { создатьРезервнуюКопию } = require('./03-РезервSQLite.cjs');
 
 const корень = resolve(__dirname, '..');
 const данные = join(корень, '06-Данные');
@@ -96,6 +97,10 @@ async function запустить() {
   if (!existsSync(вход)) throw new Error('Не найден файл ядра: ' + вход);
   занятьБлокировку();
   const readiness = check(корень);
+  if (readiness.sqlite === 'ok') {
+    const копия = await создатьРезервнуюКопию(корень);
+    журналировать('Резервная копия SQLite создана: ' + (копия ? 'успешно' : 'нет базы'));
+  }
   console.log('[Kiyomira] Предпроверка:', readiness.sqlite === 'ok' ? 'SQLite исправна' : 'Новая база SQLite');
   журналировать('Предпроверка: ' + readiness.sqlite + '; Node ' + process.version);
   const дочерний = spawn(process.execPath, [
