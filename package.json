@@ -1,0 +1,13 @@
+{
+  "name": "kiyomira",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "start": "node 01-Ядро/01-Запуск.ts",
+    "test": "node --test 05-Проверки/01-Ядро.test.ts"
+  }
+}
