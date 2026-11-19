@@ -1,40 +1,33 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 title Kiyomira
-cd /d "%~dp0"
-if errorlevel 1 (
-  echo ERROR: Cannot open project directory.
-  pause
-  exit /b 1
-)
+pushd "%~dp0"
+if errorlevel 1 goto folder_error
+where node.exe >nul 2>nul
+if errorlevel 1 goto node_missing
+node "08-Запуск\01-Пуск.cjs"
+set "KIYOMIRA_EXIT=%ERRORLEVEL%"
+popd
+if not "%KIYOMIRA_EXIT%"=="0" goto failed
+exit /b 0
 
-where node.exe >nul 2>&1
-if errorlevel 1 (
-  echo ERROR: Node.js 24 or newer is required.
-  echo Install Node.js from https://nodejs.org/ and restart this window.
-  pause
-  exit /b 1
-)
+:folder_error
+echo ERROR: Cannot open project directory.
+goto pause_error
 
-for /f "delims=" %%V in ('node -p "process.versions.node.split('.')[0]" 2^>nul') do set "NODE_MAJOR=%%V"
-if not defined NODE_MAJOR (
-  echo ERROR: Cannot determine Node.js version.
-  pause
-  exit /b 1
-)
-if %NODE_MAJOR% LSS 24 (
-  echo ERROR: Node.js 24 or newer is required. Found major version %NODE_MAJOR%.
-  pause
-  exit /b 1
-)
+:node_missing
+echo ERROR: Node.js 24 or newer was not found in PATH.
+echo Install Node.js from https://nodejs.org/
+popd
+goto pause_error
 
-set "KIYOMIRA_INTERACTIVE=1"
-echo Starting Kiyomira...
-node --run start
-set "EXIT_CODE=%ERRORLEVEL%"
-if not "%EXIT_CODE%"=="0" (
-  echo.
-  echo Kiyomira stopped with error code %EXIT_CODE%.
-  pause
-)
-exit /b %EXIT_CODE%
+:failed
+echo.
+echo ERROR: Kiyomira exited with code %KIYOMIRA_EXIT%.
+echo See 06-Данные/журнал-запуска.log for startup diagnostics.
+goto pause_error
+
+:pause_error
+echo.
+pause
+exit /b 1
