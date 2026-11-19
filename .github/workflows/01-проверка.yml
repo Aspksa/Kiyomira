@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, 'feature/**', 'fix/**']
 jobs:
-  ядро:
+  core:
+    name: Ядро TypeScript / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +23,8 @@ jobs:
       - name: Start CLI
         run: npm start
 
-  переносимость:
+  portable_windows:
+    name: Переносимость Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
