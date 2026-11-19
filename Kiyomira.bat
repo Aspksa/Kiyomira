@@ -5,7 +5,7 @@ pushd "%~dp0"
 if errorlevel 1 goto folder_error
 where node.exe >nul 2>nul
 if errorlevel 1 goto node_missing
-node "08-Запуск\01-Пуск.cjs"
+node "Kiyomira.cjs"
 set "KIYOMIRA_EXIT=%ERRORLEVEL%"
 popd
 if not "%KIYOMIRA_EXIT%"=="0" goto failed
@@ -24,7 +24,7 @@ goto pause_error
 :failed
 echo.
 echo ERROR: Kiyomira exited with code %KIYOMIRA_EXIT%.
-echo See 06-Данные/журнал-запуска.log for startup diagnostics.
+echo See the startup log in the project data directory.
 goto pause_error
 
 :pause_error
