@@ -26,10 +26,11 @@
   let staticRingLayer=null,staticRingBuilds=0,semanticEdgeCount=0;
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
+  let categoryRings=[],categoryRadius=334,categoryGrowthAt=0,categorySignature='';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
-  // Fit the 303-unit outer ring inside both narrow and short graph viewports.
-  const fitScale=()=>Math.min(1,Math.max(.18,(Math.min(width,height)-28)/626));
+  // Fit both the original brain and new category rings within the viewport.
+  const fitScale=()=>Math.min(1,Math.max(.12,(Math.min(width,height)-28)/(2*(mode==='circle'?categoryRadius+28:313))));
 
   function polar(a,r){return{x:Math.cos(a)*r,y:Math.sin(a)*r};}
   function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);}
@@ -82,6 +83,33 @@
     const indexedDocs=Array.isArray(data.documents)?data.documents.slice(0,150):[];
     const projectNames=[...new Set(indexedDocs.map(x=>String(x.проект||'').trim()).filter(Boolean))];
     const rows=Array.isArray(data.messages)?data.messages.slice(-1000):[];
+    // Category identities are derived from persisted topics and explicitly
+    // imported project names, never invented by an animation.
+    const topicsForRing=['проекты','люди','события','документы','решения','общее'];
+    const namesForRing={проекты:'Проекты',люди:'Люди',события:'События',
+      документы:'Документы',решения:'Решения',общее:'Прочее'};
+    const topicCounts=new Map(topicsForRing.map(key=>[key,Math.max(0,Number(data.topicTotals?.[key])||0)]));
+    for(const row of rows)for(const topic of (row.topics||[])){
+      if(topicCounts.has(topic)&&topicCounts.get(topic)===0)topicCounts.set(topic,1);
+    }
+    if(indexedDocs.length)topicCounts.set('документы',Math.max(indexedDocs.length,topicCounts.get('документы')));
+    if(projectNames.length)topicCounts.set('проекты',Math.max(projectNames.length,topicCounts.get('проекты')));
+    const categories=topicsForRing.filter(key=>topicCounts.get(key)>0)
+      .map(key=>({id:'topic:'+key,key,name:namesForRing[key],count:topicCounts.get(key),kind:'topic'}))
+      .concat(projectNames.slice().sort((a,b)=>a.localeCompare(b,'ru')).map(name=>({
+        id:'project:'+name,name,count:indexedDocs.filter(d=>d.проект===name).length,kind:'project'
+      })));
+    const signature=categories.map(c=>c.id).join('|');
+    if(signature!==categorySignature){categorySignature=signature;categoryGrowthAt=now();}
+    const ringCount=categories.length,outerCount=Math.max(0,ringCount-12);
+    categoryRadius=334+Math.max(0,Math.min(4,ringCount-8))*8+(outerCount?42*Math.ceil(outerCount/12):0);
+    categoryRings=categories.map((c,i)=>{
+      const outer=ringCount>12&&i>=12;
+      const slot=outer?i-12:i,slots=outer?ringCount-12:Math.min(ringCount,12);
+      const radius=334+Math.max(0,Math.min(4,ringCount-8))*8+(outer?42:0);
+      const angle=-Math.PI/2+(slot+.5)*TAU/Math.max(1,slots);
+      return {...c,ring:outer?2:1,angle,radius,x:Math.cos(angle)*radius,y:Math.sin(angle)*radius};
+    });
     // The graph is immutable between actual SQLite revisions. Avoid rebuilding
     // every sector and all Canvas nodes for unchanged polling snapshots.
     const fingerprint=JSON.stringify([
@@ -424,6 +452,33 @@
     if(mode==='circle'){
       drawStaticRings();
 
+      // Expandable category navigation outside the existing 303-unit rim.
+      // Keep nodes anchored to stable deterministic slots as SQLite grows.
+      const ringAge=now()-categoryGrowthAt;
+      const ringFade=motion.matches?1:clamp(ringAge/480,0,1);
+      for(const category of categoryRings){
+        const color=category.kind==='project'?'#d7ad77':'#72c6ba';
+        const r=category.radius,angle=category.angle;
+        const highlighted=selected?.categoryId===category.id||hovered?.categoryId===category.id;
+        ctx.globalAlpha=ringFade*(highlighted?1:.68);
+        ctx.lineWidth=highlighted?1.7:.85;
+        ctx.strokeStyle=color;circle(category.x,category.y,highlighted?11:8);ctx.stroke();
+        ctx.fillStyle=highlighted?'#d6f3e9':'#82bbaf';circle(category.x,category.y,2.2);ctx.fill();
+        // Sparse radial guide lines: one per category, never false data links.
+        ctx.strokeStyle='rgba(115,179,169,.12)';ctx.lineWidth=.5;
+        ctx.beginPath();ctx.moveTo(Math.cos(angle)*308,Math.sin(angle)*308);
+        ctx.lineTo(Math.cos(angle)*(r-9),Math.sin(angle)*(r-9));ctx.stroke();
+        if(zoom*fitScale()>.64||highlighted){
+          ctx.font='9px ui-monospace,Consolas,monospace';
+          ctx.textAlign=Math.cos(angle)>.3?'left':Math.cos(angle)<-.3?'right':'center';
+          const offset=13;
+          ctx.fillStyle=color;
+          ctx.fillText(category.name.slice(0,17)+' · '+category.count,
+            Math.cos(angle)*(r+offset),Math.sin(angle)*(r+offset));
+        }
+      }
+      ctx.globalAlpha=1;
+      // Original TRACKTOR rim stays intact; no prior ring is removed.
       // Outer TRACKTOR categorical rim, tied to actual thematic sectors.
       ctx.lineWidth=.8;ctx.strokeStyle='rgba(99,165,176,.25)';
       circle(0,0,299);ctx.stroke();
@@ -502,6 +557,11 @@
         hexPath(n.x,n.y,radius);ctx.lineWidth=1;ctx.strokeStyle='rgba(238,138,60,.29)';ctx.stroke();
         hexPath(n.x,n.y,radius-3);ctx.lineWidth=.5;ctx.strokeStyle='rgba(238,138,60,.11)';ctx.stroke();
         ctx.fillStyle='rgba(238,138,60,.025)';ctx.fill();
+        if(zoom*fitScale()>.85||selected?.id===n.id){
+          ctx.textAlign='center';ctx.font='9px ui-monospace,Consolas,monospace';
+          ctx.fillStyle='#abd6cd';
+          ctx.fillText(String(n.count||0)+' записей',n.x,n.y+27);
+        }
       });
     }
     // Suspected contradictions are shown as review candidates, not verified facts.
@@ -653,6 +713,12 @@
     const scale=zoom*fitScale();
     const x=(p.x-width/2-pan.x)/scale,y=(p.y-height/2-pan.y)/scale;
     let best=null,dist=Infinity;
+    if(mode==='circle')for(const category of categoryRings){
+      const d=(x-category.x)**2+(y-category.y)**2;
+      if(d<18**2&&d<dist){dist=d;best={id:category.id,kind:'category',
+        categoryId:category.id,label:category.name+' · '+category.count,
+        x:category.x,y:category.y,group:-1};}
+    }
     for(const n of nodes){const d=(x-n.x)**2+(y-n.y)**2;const radius=n.kind==='core'?30:n.kind==='chat'?18:12;if(d<radius**2&&d<dist){dist=d;best=n;}}
     return best;
   }
@@ -669,6 +735,10 @@
       window.dispatchEvent(new CustomEvent('kiyomira-brain-interaction'));
       const n=nearest(coord(e));selected=n;
       info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.kind==='fact'?'Кандидат факта · источник #'+n.sourceId+' · требует проверки: '+n.label:n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
+      if(n?.kind==='category'){
+        cameraTarget={x:-n.x*zoom*fitScale()*.45,y:-n.y*zoom*fitScale()*.45};
+        flashUntil=now()+900;request();
+      }
       if(n?.documentId)window.dispatchEvent(new CustomEvent('kiyomira-brain-document',{detail:{documentId:n.documentId}}));
       else if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId,messageId:n.messageId||n.sourceId||null}}));
       request();
@@ -766,7 +836,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
+    getViewportStats(){return {categoryCount:categoryRings.length,categoryRings:categoryRings.length>12?2:1,categoryRadius,fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
