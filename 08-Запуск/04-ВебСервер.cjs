@@ -165,6 +165,14 @@ async function создатьВебСервер({ корень = resolve(__dirna
           semanticLinks:база.связиПоСодержанию(120),factConflicts:база.противоречияФактов(60),latest:номерСобытия
         });
       }
+      // Exact source lookup for a clicked graph/message node. Never infer IDs.
+      const sourceRoute=путь.match(/^\/api\/memory\/messages\/(\d+)$/);
+      if(запрос.method==='GET'&&sourceRoute){
+        const item=база.сообщениеПоИд(Number(sourceRoute[1]));
+        if(!item)throw ошибка('Сообщение не найдено',404);
+        return json(ответ,200,{message:item,
+          sources:item.роль==='ассистент'?база.источникиОтвета(item.ид):[]});
+      }
       if (запрос.method === 'GET' && путь === '/api/memory/search') {
         const q=String(url.searchParams.get('q')||'').slice(0,160);
         return json(ответ,200,{results:база.поискГибридный(q,12),method:'local-lexical-hybrid'});
@@ -302,7 +310,11 @@ async function создатьВебСервер({ корень = resolve(__dirna
       const chat = idИзПути(путь);
       if (chat) {
         if (!база.существуетДиалог(chat.ид)) throw ошибка('Диалог не найден',404);
-        if (запрос.method === 'GET' && !chat.действие) return json(ответ,200,{ messages:база.сообщенияДиалога(chat.ид) });
+        if (запрос.method === 'GET' && !chat.действие) return json(ответ,200,{
+          messages:база.сообщенияДиалога(chat.ид).map(m=>({
+            ...m,sources:m.роль==='ассистент'?база.источникиОтвета(m.ид):[]
+          }))
+        });
         if (запрос.method === 'PATCH' && !chat.действие) {
           const данные = await телоЗапроса(запрос);
           if (typeof данные.title !== 'string' || данные.title.length > 100) throw ошибка('Некорректное название');
