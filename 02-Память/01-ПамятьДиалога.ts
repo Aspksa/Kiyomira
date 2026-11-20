@@ -399,32 +399,44 @@ export class ПамятьДиалога {
   // shared normalized values or exact same key+value, not model-inferred links.
   // Every returned item carries its complete fact-ID/source-ID path.
   путиПодтверждённыхФактов(запрос:string,лимит=4,глубина=2){
+    const start=performance.now();
     const maxResults=Math.max(1,Math.min(8,Math.trunc(лимит)||4));
     const maxDepth=Math.max(1,Math.min(3,Math.trunc(глубина)||2));
     // A single strongest anchor keeps directly related facts available to explore.
     const seeds=this.подтверждённыеДляКонтекста(запрос,1);
     if(!seeds.length)return [];
-    const rows=this.база.prepare(
-      "SELECT ид,источник_ид,ключ,значение,статус FROM факты_кандидаты WHERE статус='подтверждено' ORDER BY ид DESC LIMIT 500"
-    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string}[];
+    type Confirmed={ид:number;источник_ид:number;ключ:string;значение:string;статус:string};
+    type GraphIndex={byId:Map<number,Confirmed>;byValue:Map<string,Confirmed[]>;
+      conflicting:Set<string>};
     const normalize=(x:string)=>x.toLocaleLowerCase('ru').replace(/ё/g,'е')
       .replace(/[^\p{L}\p{N}]+/gu,' ').trim();
-    // A conflict anywhere in the confirmed sample blocks that entire key,
-    // including intermediate nodes. Never propagate through disagreement.
-    const meanings=new Map<string,Set<string>>();
-    for(const row of rows){
-      const key=normalize(row.ключ);
-      if(!meanings.has(key))meanings.set(key,new Set());
-      meanings.get(key)!.add(normalize(row.значение));
+    const cached=this.graphCache.get('confirmed');
+    let graph:GraphIndex;
+    if(cached&&cached.revision===this.revision){
+      graph=cached.value as GraphIndex;
+    }else{
+      const rows=this.база.prepare(
+        "SELECT ид,источник_ид,ключ,значение,статус FROM факты_кандидаты WHERE статус='подтверждено' ORDER BY ид DESC LIMIT 500"
+      ).all() as Confirmed[];
+      const meanings=new Map<string,Set<string>>();
+      for(const row of rows){
+        const key=normalize(row.ключ);
+        if(!meanings.has(key))meanings.set(key,new Set());
+        meanings.get(key)!.add(normalize(row.значение));
+      }
+      const conflicting=new Set([...meanings].filter(([,values])=>values.size>1).map(([key])=>key));
+      const safe=rows.filter(row=>!conflicting.has(normalize(row.ключ)));
+      const byId=new Map(safe.map(row=>[row.ид,row]));
+      const byValue=new Map<string,Confirmed[]>();
+      for(const row of safe){
+        const value=normalize(row.значение);
+        if(!byValue.has(value))byValue.set(value,[]);
+        byValue.get(value)!.push(row);
+      }
+      graph={byId,byValue,conflicting};
+      this.graphCache.set('confirmed',{revision:this.revision,value:graph});
     }
-    const safe=rows.filter(row=>meanings.get(normalize(row.ключ))?.size===1);
-    const byId=new Map(safe.map(row=>[row.ид,row]));
-    const byValue=new Map<string,typeof safe>();
-    for(const row of safe){
-      const value=normalize(row.значение);
-      if(!byValue.has(value))byValue.set(value,[]);
-      byValue.get(value)!.push(row);
-    }
+    const {byId,byValue}=graph;
     const originIds=new Set(seeds.map(row=>row.ид));
     type Path={ид:number;источник_ид:number;ключ:string;значение:string;
       связь:string;сила:number;глубина:number;путь:number[];источники:number[]};
@@ -457,8 +469,10 @@ export class ПамятьДиалога {
         });
       }
     }
-    return results.sort((a,b)=>a.глубина-b.глубина||
+    const ranked=results.sort((a,b)=>a.глубина-b.глубина||
       b.сила-a.сила||b.ид-a.ид).slice(0,maxResults);
+    this.recordTime('graphWalk',start);
+    return ranked;
   }
 
   // Keep the old call site compatible; now provides provenance for every hop.
