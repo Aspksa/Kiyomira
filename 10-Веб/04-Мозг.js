@@ -335,6 +335,17 @@
     });
     layout();save();
   }
+  const zoomLevel=()=>zoom<.78?'Обзор':zoom<1.35?'Кластеры':zoom<2.3?'Записи':'Детали';
+  function syncZoom(){
+    const output=document.getElementById('brain-zoom-level');
+    if(output)output.textContent=zoomLevel();
+  }
+  function changeZoom(factor){
+    const next=clamp(zoom*factor,.4,3.5);
+    if(next===zoom)return;
+    zoom=next;syncZoom();request();save();
+    window.KiyomiraUnity?.relayout();
+  }
   function save(){
     try{localStorage.setItem('kiyomira.brain.camera',JSON.stringify({mode,zoom,x:pan.x,y:pan.y}));}catch{}
   }
@@ -568,9 +579,11 @@
   });
   canvas.addEventListener('pointercancel',()=>{pointer=null;});
   canvas.addEventListener('pointerleave',()=>{hovered=null;request();});
-  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();window.KiyomiraUnity?.relayout();},{passive:false});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();changeZoom(Math.exp(-e.deltaY*.001));},{passive:false});
+  document.getElementById('brain-zoom-in')?.addEventListener('click',()=>changeZoom(1.3));
+  document.getElementById('brain-zoom-out')?.addEventListener('click',()=>changeZoom(1/1.3));
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
-  document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;request();save();});
+  document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;syncZoom();request();save();});
   document.getElementById('brain-focus')?.addEventListener('click',()=>{
     focus=!focus;document.body.classList.toggle('brain-focus',focus);
     const button=document.getElementById('brain-focus');button.textContent=focus?'Выход':'Фокус';
@@ -600,24 +613,52 @@
   document.addEventListener('visibilitychange',()=>{visible=!document.hidden;if(visible)request();});
   motion.addEventListener?.('change',request);
   new ResizeObserver(resize).observe(host);
+  function showAnswerRoute(ids,chatId){
+    // The route is reconstructed solely from links between real SQLite nodes.
+    // Core -> topic group -> conversation -> each retrieved message.
+    recalled=new Set((Array.isArray(ids)?ids:[]).filter(Number.isSafeInteger).map(id=>'m'+id));
+    activeChat=chatId||null;
+    sourceRouteEdges=new Set();
+    const byId=new Map(nodes.map((n,i)=>[n.id,i]));
+    const incoming=new Map();
+    for(const [a,b] of edges){
+      if(!incoming.has(b))incoming.set(b,[]);
+      incoming.get(b).push(a);
+    }
+    for(const id of recalled){
+      const target=byId.get(id);
+      if(target===undefined)continue;
+      const queue=[target],visited=new Set([target]);
+      while(queue.length){
+        const child=queue.shift();
+        for(const parent of incoming.get(child)||[]){
+          const node=nodes[parent];
+          if(!node||!['core','cluster','chat'].includes(node.kind))continue;
+          sourceRouteEdges.add(parent+':'+child);
+          if(!visited.has(parent)){visited.add(parent);queue.push(parent);}
+        }
+      }
+    }
+    const first=nodes.find(n=>recalled.has(n.id));
+    if(first&&!pointer&&zoom>=.8)cameraTarget={
+      x:-first.x*zoom*fitScale(),y:-first.y*zoom*fitScale()
+    };
+    routeUntil=now()+2400;flashUntil=routeUntil;
+    info.textContent=recalled.size?'Маршрут ответа · источники SQLite: '+recalled.size+
+      ' · на карте: '+[...recalled].filter(id=>byId.has(id)).length:'Источники ответа не записаны';
+    request();
+  }
   window.KiyomiraBrain={
     update,setPhase,eventActivity,
-    focusSources(ids,chatId){
-      recalled=new Set((Array.isArray(ids)?ids:[]).filter(Number.isSafeInteger).map(x=>'m'+x));
-      activeChat=chatId||null;
-      const node=nodes.find(n=>recalled.has(n.id));
-      if(node&&zoom>=.8&&!pointer){
-        cameraTarget={x:-node.x*zoom*fitScale(),y:-node.y*zoom*fitScale()};
-      }
-      flashUntil=now()+1600;request();
-    },
+    focusSources:showAnswerRoute,
+    showAnswerRoute,
     setSelectedChat(chatId){
       activeChat=chatId||null;
       request();
     },
     getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
-    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length};},
+    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
-  setMode(mode);resize();
+  syncZoom();setMode(mode);resize();
 })();
