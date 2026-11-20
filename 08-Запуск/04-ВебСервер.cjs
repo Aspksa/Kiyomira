@@ -8,6 +8,7 @@ const { randomBytes } = require('node:crypto');
 const TYPES = {
   '/': ['10-Веб/01-Страница.html', 'text/html; charset=utf-8'],
   '/02-Стиль.css': ['10-Веб/02-Стиль.css', 'text/css; charset=utf-8'],
+  '/05-ЕдиныйИнтерфейс.css': ['10-Веб/05-ЕдиныйИнтерфейс.css', 'text/css; charset=utf-8'],
   '/03-Приложение.js': ['10-Веб/03-Приложение.js', 'text/javascript; charset=utf-8'],
   '/04-Мозг.js': ['10-Веб/04-Мозг.js', 'text/javascript; charset=utf-8']
 };

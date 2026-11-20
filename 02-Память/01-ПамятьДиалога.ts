@@ -385,13 +385,25 @@ export class ПамятьДиалога {
     const rows=this.база.prepare(
       'SELECT ид,название,проект,текст FROM документы_памяти ORDER BY ид DESC LIMIT 300'
     ).all() as {ид:number;название:string;проект:string;текст:string}[];
-    return rows.map(row=>({...row,балл:релевантность(запрос,
-      row.название+' '+row.проект+' '+row.текст.slice(0,12000))}))
-      .filter(row=>row.балл>=2.5)
+    // Search the entire document instead of ranking its first 12k characters.
+    // Independent overlapping windows let a relevant passage near the end win.
+    const windowSize=1300,step=1000;
+    return rows.map(row=>{
+      let best=-1,excerpt='';
+      for(let offset=0;offset<row.текст.length;offset+=step){
+        const segment=row.текст.slice(offset,offset+windowSize);
+        if(!segment)break;
+        const score=релевантность(запрос,segment);
+        if(score>best){best=score;excerpt=segment.slice(0,950);}
+      }
+      const titleScore=релевантность(запрос,row.название+' '+row.проект);
+      // Passage relevance takes priority over title-only matches.
+      const score=Math.max(best,titleScore*.6);
+      return {ид:row.ид,название:row.название,проект:row.проект,
+        отрывок:excerpt,балл:score};
+    }).filter(row=>row.балл>=2.5)
       .sort((a,b)=>b.балл-a.балл||b.ид-a.ид)
-      .slice(0,Math.max(1,Math.min(5,лимит)))
-      .map(row=>({ид:row.ид,название:row.название,проект:row.проект,
-        отрывок:row.текст.slice(0,950),балл:row.балл}));
+      .slice(0,Math.max(1,Math.min(5,лимит)));
   }
 
   // Confirmed facts keep provenance and are not silently overwritten by
