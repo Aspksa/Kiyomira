@@ -22,6 +22,7 @@
   const now=()=>performance.now();
 
   function polar(a,r){return{x:Math.cos(a)*r,y:Math.sin(a)*r};}
+  function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);}
   function hexPath(x,y,r){
     ctx.beginPath();
     for(let k=0;k<6;k++){const a=(k+.5)*TAU/6;const px=x+r*Math.cos(a),py=y+r*Math.sin(a);if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
