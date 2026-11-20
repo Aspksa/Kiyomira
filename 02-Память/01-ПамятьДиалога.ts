@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { извлечьФакты, определитьСвязьФактов } from './02-КартаЗнаний.ts';
-import { ранжировать, релевантность } from './04-ГибридныйПоиск.ts';
+import { ранжировать, релевантность, токены } from './04-ГибридныйПоиск.ts';
 
 export type Роль = 'пользователь' | 'ассистент';
 export type Сообщение = Readonly<{ роль: Роль; текст: string }>;
@@ -497,14 +497,47 @@ export class ПамятьДиалога {
   }
 
   поискГибридный(запрос:string,лимит=8){
-    const records=this.база.prepare(`
-      SELECT ид, диалог_ид, роль, текст, время
-      FROM сообщения WHERE диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 5000
-    `).all() as {ид:number;диалог_ид:number;роль:Роль;текст:string;время:string}[];
-    return ранжировать(запрос,records.reverse(),лимит).map(row=>({
+    const start=performance.now();
+    const safeLimit=Math.max(1,Math.min(30,Math.trunc(лимит)||8));
+    const key=запрос+'|'+safeLimit;
+    const cached=this.searchCache.get(key);
+    if(cached&&cached.revision===this.revision){
+      this.recordTime('messageCache',start);
+      return cached.rows.map(row=>({...row}));
+    }
+    type Match={ид:number;диалог_ид:number;роль:Роль;текст:string;время:string};
+    let records:Match[]=[];
+    const terms=токены(запрос).slice(0,12);
+    if(this.ftsReady&&terms.length){
+      try{
+        // Identifiers never interpolate into SQL. Terms come from normalized
+        // Unicode tokens, quoted for FTS5 syntax safety.
+        const expression=terms.map(term=>'"'+term.replace(/"/g,'')+'"').join(' OR ');
+        records=this.база.prepare(`
+          SELECT s.ид,s.диалог_ид,s.роль,s.текст,s.время
+          FROM сообщения_fts JOIN сообщения s ON s.ид=сообщения_fts.rowid
+          WHERE сообщения_fts MATCH ? AND s.диалог_ид IS NOT NULL
+          ORDER BY bm25(сообщения_fts), s.ид DESC LIMIT 260
+        `).all(expression) as Match[];
+      }catch{records=[];}
+    }
+    // Misses, unsupported FTS or short/non-indexable queries use the old
+    // conservative local ranking. The fallback remains bounded.
+    if(records.length===0){
+      records=this.база.prepare(`
+        SELECT ид,диалог_ид,роль,текст,время FROM сообщения
+        WHERE диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 5000
+      `).all() as Match[];
+      records.reverse();
+    }else records.reverse();
+    const result=ранжировать(запрос,records,safeLimit).map(row=>({
       ид:row.ид,диалог_ид:row.диалог_ид,роль:row.роль,
       текст:row.текст.slice(0,320),время:row.время,балл:row.балл
     }));
+    if(this.searchCache.size>=40)this.searchCache.delete(this.searchCache.keys().next().value!);
+    this.searchCache.set(key,{revision:this.revision,rows:result});
+    this.recordTime('messageSearch',start);
+    return result.map(row=>({...row}));
   }
 
   // Local, source-grounded document retrieval. This costs no Cloud.ru tokens
