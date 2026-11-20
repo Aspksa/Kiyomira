@@ -81,11 +81,12 @@
         <input id="model-name" type="text" maxlength="200" list="models-list" placeholder="Название модели Cloud.ru" autocomplete="off">
         <datalist id="models-list"></datalist>
         <label class="demo-option"><input type="checkbox" id="demo-mode"> Включить тестовую модель (без Cloud.ru)</label>
-        <p class="hint">Демо-ответы не генерируются ИИ. По умолчанию отключено.</p>
+        <p class="hint">Демо-ответы не генерируются ИИ. По умолчанию отключено. Проверка реального ответа отправляет короткий платный запрос Cloud.ru только после подтверждения.</p>
         <div class="settings-actions">
           <button type="submit" class="primary">Сохранить</button>
           <button type="button" id="refresh-models">Список моделей</button>
-          <button type="button" id="test-cloud">Проверить Cloud.ru</button>
+          <button type="button" id="test-cloud">Проверить список моделей</button>
+          <button type="button" id="test-generation">Проверить реальный ответ (платно)</button>
           <button type="button" id="clear-key" class="danger">Сбросить ключ</button>
           <button type="button" id="quit-app" class="danger">Завершить программу</button>
         </div>
