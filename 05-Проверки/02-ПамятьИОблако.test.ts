@@ -158,3 +158,30 @@ test('streaming core writes atomic SQLite pair only after complete answer',async
   assert.equal(failedMemory.сообщенияДиалога(failedChat).length,0);
   await failed.остановить();failedMemory.закрыть();
 });
+
+
+test('local ranked retrieval: exact sources, false positives and reusable context',async()=>{
+  const {релевантность,ранжировать}=await import('../02-Память/04-ГибридныйПоиск.ts');
+  assert.ok(релевантность('Память SQLite','В проекте Kiyomira используется память SQLite')>6);
+  assert.equal(релевантность('память sqlite','совершенно другая история'),0);
+  const memory=new ПамятьДиалога(30);
+  try{
+    const original=memory.создатьДиалог('Предыдущая беседа');
+    memory.добавитьПару('Проект: Kiyomira','Сохранил информацию',original);
+    memory.добавитьПару('База данных: SQLite','Да',original);
+    const newChat=memory.создатьДиалог('Новый чат');
+    const matches=memory.поискГибридный('какая база данных SQLite');
+    assert.equal(matches.some(row=>row.текст.includes('База данных: SQLite')&&row.ид>0),true);
+    const context=memory.контекстПоЗапросу('Kiyomira проект',newChat);
+    assert.equal(context.источники.length>0,true);
+    assert.equal(context.история.some(item=>item.текст.includes('Источник #')),true);
+    const facts=memory.кандидатыФактов();
+    assert.equal(facts.length,2);
+    assert.equal(facts.every(x=>x.статус==='требует проверки'),true);
+    assert.equal(facts.every(x=>x.источник_ид>0),true);
+    memory.добавитьПару('Проект: Kiyomira','Подтверждение',original);
+    assert.equal(memory.связиФактов().length>0,true);
+    memory.удалитьДиалог(original);
+    assert.equal(memory.кандидатыФактов().length,0);
+  }finally{memory.закрыть();}
+});
