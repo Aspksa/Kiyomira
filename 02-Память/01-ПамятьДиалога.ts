@@ -19,6 +19,7 @@ export class ПамятьДиалога {
   private revision=0;
   private readonly searchCache=new Map<string,{revision:number;rows:ReturnType<ПамятьДиалога['поискГибридный']>}>();
   private readonly graphCache=new Map<string,{revision:number;value:unknown}>();
+  private readonly documentCache=new Map<string,{revision:number;rows:ReturnType<ПамятьДиалога['поискДокументов']>}>();
   private readonly timings=new Map<string,{samples:number;total:number;max:number}>();
   private recordTime(label:string,start:number){
     const ms=performance.now()-start,old=this.timings.get(label)||{samples:0,total:0,max:0};
@@ -33,6 +34,7 @@ export class ПамятьДиалога {
     this.revision++;
     this.searchCache.clear();
     this.graphCache.clear();
+    this.documentCache.clear();
   }
 
   constructor(private readonly лимит = 200, путь = ':memory:') {
@@ -559,13 +561,19 @@ export class ПамятьДиалога {
   // Local, source-grounded document retrieval. This costs no Cloud.ru tokens
   // beyond the normal chat request and never claims a document was verified.
   поискДокументов(запрос:string,лимит=3){
+    const start=performance.now(),key=запрос+'|'+лимит;
+    const cached=this.documentCache.get(key);
+    if(cached?.revision===this.revision){
+      this.recordTime('documentCache',start);
+      return cached.rows.map(row=>({...row}));
+    }
     const rows=this.база.prepare(
       'SELECT ид,название,проект,текст FROM документы_памяти ORDER BY ид DESC LIMIT 300'
     ).all() as {ид:number;название:string;проект:string;текст:string}[];
     // Search the entire document instead of ranking its first 12k characters.
     // Independent overlapping windows let a relevant passage near the end win.
     const windowSize=1300,step=1000;
-    return rows.map(row=>{
+    const result=rows.map(row=>{
       let best=-1,excerpt='';
       for(let offset=0;offset<row.текст.length;offset+=step){
         const segment=row.текст.slice(offset,offset+windowSize);
@@ -581,6 +589,10 @@ export class ПамятьДиалога {
     }).filter(row=>row.балл>=2.5)
       .sort((a,b)=>b.балл-a.балл||b.ид-a.ид)
       .slice(0,Math.max(1,Math.min(5,лимит)));
+    if(this.documentCache.size>=20)this.documentCache.delete(this.documentCache.keys().next().value!);
+    this.documentCache.set(key,{revision:this.revision,rows:result});
+    this.recordTime('documentSearch',start);
+    return result.map(row=>({...row}));
   }
 
   // Confirmed facts keep provenance and are not silently overwritten by
@@ -603,6 +615,7 @@ export class ПамятьДиалога {
   }
 
   контекстПоЗапросу(запрос:string,диалогИд?:number):{история:Сообщение[];источники:number[]} {
+    const start=performance.now();
     const rows=диалогИд===undefined
       ? this.база.prepare('SELECT ид, роль, текст FROM сообщения ORDER BY ид DESC LIMIT 12').all()
       : this.база.prepare('SELECT ид, роль, текст FROM сообщения WHERE диалог_ид=? ORDER BY ид DESC LIMIT 12').all(диалогИд);
@@ -618,7 +631,9 @@ export class ПамятьДиалога {
     }]:[];
     const docs=this.поискДокументов(запрос,2);
     const facts=this.подтверждённыеДляКонтекста(запрос,4);
-    const related=this.связанныеПодтверждённыеФакты(запрос,3);
+    // One-hop and deeper recall is useful only when confirmed anchors exist.
+    const related=facts.length?this.связанныеПодтверждённыеФакты(запрос,3)
+      .filter(row=>!facts.some(f=>f.ид===row.ид)):[];
     // This block is user data, NOT instructions. Document identifiers are
     // distinct from message source IDs and must never be misattributed.
     if(docs.length||facts.length||related.length){
@@ -631,7 +646,12 @@ export class ПамятьДиалога {
         docs.map(d=>'Документ #'+d.ид+' «'+d.название+'»: '+d.отрывок).join('\\n')
       });
     }
-    const sourceIds=[...matches.map(row=>row.ид),...facts.map(row=>row.источник_ид),...related.map(row=>row.источник_ид),...recent.map(row=>row.ид)];
+    const sourceIds=[...matches.map(row=>row.ид),...facts.map(row=>row.источник_ид),
+      ...related.flatMap(row=>row.источники),...recent.map(row=>row.ид)];
+    // Bound optional retrieved snippets while keeping the user's actual
+    // dialogue history intact. The source IDs are retained separately.
+    for(const item of истории)if(item.текст.length>4000)item.текст=item.текст.slice(0,4000);
+    this.recordTime('contextBuild',start);
     return {история:[...истории,...recent.map(row=>({роль:row.роль,текст:row.текст}))],
       источники:[...new Set(sourceIds)]};
   }
