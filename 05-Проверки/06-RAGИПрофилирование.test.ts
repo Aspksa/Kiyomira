@@ -265,3 +265,39 @@ test('SQLite отдаёт внутреннюю карту сущностей, в
     assert.deepEqual(memory.кандидатыКонфликтовДляПроверки(),[]);
   }finally{memory.закрыть();}
 });
+
+
+test('Смысловые отношения извлекаются из русских предложений с реальным источником',async()=>{
+  const {извлечьОтношения,согласоватьОтношения}=
+    await import('../02-Память/06-СмысловыеОтношения.ts');
+  const rows=извлечьОтношения(
+    'Проект Kiyomira использует SQLite. Документ architecture.md относится к проекту Kiyomira. Решение migration обновляет проект Kiyomira.',71);
+  assert.equal(rows.length,3);
+  assert.deepEqual(rows.map(r=>r.тип),['использует','относится_к_проекту','изменяет']);
+  assert.ok(rows.every(r=>r.источник_ид===71&&r.статус==='кандидат'));
+  assert.deepEqual(извлечьОтношения('Kiyomira не использует SQLite',72),[]);
+  assert.deepEqual(извлечьОтношения('Если Kiyomira использует SQLite',72),[]);
+  assert.deepEqual(извлечьОтношения('SQLITE работает на Kiyomira',0),[]);
+  assert.equal(согласоватьОтношения([...rows,...извлечьОтношения(
+    'Проект Kiyomira использует SQLite',72)])[0].источники.length,2);
+});
+
+test('Отношения остаются непроверенными в SQLite, с точной атрибуцией и удалением',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Семантика');
+    memory.добавитьПару('Проект Kiyomira использует SQLite','Ок',chat);
+    memory.добавитьПару('Документ architecture.md относится к проекту Kiyomira','Ок',chat);
+    const map=memory.картаСущностей();
+    assert.ok(map.смысловыеОтношения.some(x=>x.тип==='использует'));
+    const links=memory.поискСмысловыхОтношений('связи Kiyomira SQLite');
+    assert.ok(links.some(x=>x.источники.length===1&&x.статус==='кандидат'));
+    const context=memory.контекстПоЗапросу('какие связи Kiyomira SQLite',chat);
+    assert.ok(context.история.some(x=>x.текст.includes('Неподтверждённое отношение')));
+    for(const link of links)for(const id of link.источники){
+      assert.ok(memory.сообщениеПоИд(id));
+    }
+    memory.удалитьДиалог(chat);
+    assert.deepEqual(memory.поискСмысловыхОтношений('связи Kiyomira SQLite'),[]);
+  }finally{memory.закрыть();}
+});
