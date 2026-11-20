@@ -18,7 +18,7 @@
   let visible=!document.hidden,raf=0,lastTick=0,active=false,phase='idle',phaseAt=0;
   let flashUntil=0;
   let totalMessages=0,conflicts=[],recalled=new Set(),focus=false,phaseChat=null;
-  let cameraTarget=null;
+  let cameraTarget=null,hovered=null,sectorAngles=[];
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
 
@@ -132,97 +132,86 @@
     request();
   }
 
-  // TRACKTOR-like concentric sector map: each topic occupies a bounded angular
-  // slice INSIDE the outer ring. Every dot is a stored message, never filler.
+  // Weighted stable radial sectors backed by actual saved messages.
   function layout() {
     const groups=nodes.filter(n=>n.kind==='cluster');
     const chats=nodes.filter(n=>n.kind==='chat');
     const messages=nodes.filter(n=>n.kind==='message');
-    const groupCount=groups.length;
     const byGroup=new Map(groups.map(n=>[n.group,[]]));
-    chats.forEach(chat=>byGroup.get(chat.group)?.push(chat));
+    for(const chat of chats)byGroup.get(chat.group)?.push(chat);
     const byChat=new Map(chats.map(n=>[n.chatId,[]]));
-    messages.forEach(n=>byChat.get(n.chatId)?.push(n));
-    const sectorCount=Math.max(8,groupCount);
+    for(const msg of messages)byChat.get(msg.chatId)?.push(msg);
+    const weights=groups.map(g=>Math.sqrt(Math.max(1,g.count||1))+.65);
+    const sum=weights.reduce((a,b)=>a+b,0)||1;
+    let angle=-Math.PI/2;
+    sectorAngles=[];
     for(let i=0;i<groups.length;i++){
-      const group=groups[i];
+      const group=groups[i],width=TAU*weights[i]/sum;
+      const start=angle,end=angle+width,middle=(start+end)/2;
+      sectorAngles.push({group,start,end,middle});
+      angle=end;
       if(mode==='circle'){
-        const start=-Math.PI/2+i*TAU/sectorCount;
-        const end=start+TAU/sectorCount;
-        const center=(start+end)/2;
-        group.sectorStart=start;group.sectorEnd=end;
-        group.tx=Math.cos(center)*99;
-        group.ty=Math.sin(center)*99;
+        group.tx=Math.cos(middle)*99;group.ty=Math.sin(middle)*99;
       }else if(mode==='honeycomb'){
-        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groupCount/6);
-        group.tx=(col-2.5)*146+(row%2)*73;
-        group.ty=(row-(rows-1)/2)*128;
+        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groups.length/6);
+        group.tx=(col-2.5)*146+(row%2)*73;group.ty=(row-(rows-1)/2)*128;
       }else{
-        const angle=i*2.399963229728653-Math.PI/2;
-        const radius=78+39*Math.sqrt(i);
-        group.tx=Math.cos(angle)*radius;group.ty=Math.sin(angle)*radius;
+        const a=i*2.399963229728653-Math.PI/2,r=78+39*Math.sqrt(i);
+        group.tx=Math.cos(a)*r;group.ty=Math.sin(a)*r;
       }
       if(!Number.isFinite(group.x)){group.x=group.tx;group.y=group.ty;}
       const peers=byGroup.get(group.group)||[];
       peers.forEach((chat,j)=>{
         if(mode==='circle'){
-          const start=group.sectorStart,end=group.sectorEnd;
-          const margin=Math.min(.09,(end-start)*.13);
-          const angle=start+margin+(j+.5)/Math.max(1,peers.length)*(end-start-2*margin);
-          const radius=142+(j%3)*9;
-          chat.tx=Math.cos(angle)*radius;chat.ty=Math.sin(angle)*radius;
+          const margin=Math.min(.06,width*.09);
+          const a=start+margin+(j+.5)/Math.max(1,peers.length)*(width-2*margin);
+          const r=135+(j%3)*9;
+          chat.tx=Math.cos(a)*r;chat.ty=Math.sin(a)*r;
         }else{
-          const angle=j*2.399963229728653,radius=17+11*Math.sqrt(j);
-          chat.tx=group.tx+Math.cos(angle)*radius;
-          chat.ty=group.ty+Math.sin(angle)*radius;
+          const a=j*2.399963229728653,r=17+11*Math.sqrt(j);
+          chat.tx=group.tx+Math.cos(a)*r;chat.ty=group.ty+Math.sin(a)*r;
         }
         if(!Number.isFinite(chat.x)){chat.x=chat.tx;chat.y=chat.ty;}
       });
     }
-    for(const group of groups){
-      const peers=messages.filter(n=>n.group===group.group);
+    for(const sector of sectorAngles){
+      const peers=messages.filter(n=>n.group===sector.group.group);
       if(mode==='circle'){
-        // Dense radial arrays arranged as columns and rows, within each slice.
-        const perRow=Math.max(1,Math.min(14,Math.ceil(Math.sqrt(peers.length*1.35))));
-        const rows=Math.max(1,Math.ceil(peers.length/perRow));
-        const start=group.sectorStart,end=group.sectorEnd;
-        const margin=Math.min(.075,(end-start)*.1);
-        peers.forEach((message,index)=>{
-          const row=Math.floor(index/perRow),col=index%perRow;
-          const occupied=Math.min(perRow,peers.length-row*perRow);
-          const angle=start+margin+(col+.5)/occupied*(end-start-2*margin);
-          const radius=174+(row+.5)/rows*59;
-          message.tx=Math.cos(angle)*radius;
-          message.ty=Math.sin(angle)*radius;
-          if(!Number.isFinite(message.x)){message.x=message.tx;message.y=message.ty;}
+        const width=sector.end-sector.start,margin=Math.min(.05,width*.1);
+        const cols=Math.max(1,Math.min(28,Math.floor(width*170/5)));
+        const rows=Math.max(1,Math.ceil(peers.length/cols));
+        peers.forEach((msg,i)=>{
+          const row=i%rows,col=Math.floor(i/rows);
+          const used=Math.max(1,Math.ceil(peers.length/rows));
+          const a=sector.start+margin+(col+.5)/used*(width-2*margin);
+          const r=169+(row+.5)/rows*67;
+          msg.tx=Math.cos(a)*r;msg.ty=Math.sin(a)*r;
+          if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
         });
       }else{
-        for(const chat of byGroup.get(group.group)||[]){
-          const items=byChat.get(chat.chatId)||[];
-          items.forEach((item,index)=>{
-            const angle=index*2.399963229728653,radius=12+6*Math.sqrt(index);
-            item.tx=chat.tx+Math.cos(angle)*radius;
-            item.ty=chat.ty+Math.sin(angle)*radius;
-            if(!Number.isFinite(item.x)){item.x=item.tx;item.y=item.ty;}
+        for(const chat of byGroup.get(sector.group.group)||[]){
+          (byChat.get(chat.chatId)||[]).forEach((msg,i)=>{
+            const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
+            msg.tx=chat.tx+Math.cos(a)*r;msg.ty=chat.ty+Math.sin(a)*r;
+            if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
           });
         }
       }
     }
+    const msgIndex=new Map(messages.map(n=>[n.messageId,n]));
     for(const fact of nodes.filter(n=>n.kind==='fact')){
-      const source=nodes.find(n=>n.messageId===fact.sourceId);
+      const source=msgIndex.get(fact.sourceId);
       if(!source)continue;
-      const angle=fact.factId*2.399963229728653;
-      fact.tx=source.tx+Math.cos(angle)*7;fact.ty=source.ty+Math.sin(angle)*7;
+      const a=fact.factId*2.399963229728653;
+      fact.tx=source.tx+Math.cos(a)*7;fact.ty=source.ty+Math.sin(a)*7;
       if(!Number.isFinite(fact.x)){fact.x=fact.tx;fact.y=fact.ty;}
     }
     if(mode!=='circle'){
-      for(let iteration=0;iteration<5;iteration++){
-        for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
-          const left=groups[i],right=groups[j];
-          const dx=left.tx-right.tx,dy=left.ty-right.ty;
-          const dist=Math.hypot(dx,dy)||.01,limit=mode==='honeycomb'?156:68;
-          if(dist<limit){const push=(limit-dist)*.18;left.tx+=dx/dist*push;left.ty+=dy/dist*push;right.tx-=dx/dist*push;right.ty-=dy/dist*push;}
-        }
+      for(let k=0;k<5;k++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+        const left=groups[i],right=groups[j],dx=left.tx-right.tx,dy=left.ty-right.ty;
+        const d=Math.hypot(dx,dy)||.01,limit=mode==='honeycomb'?156:68;
+        if(d<limit){const amount=(limit-d)*.18;left.tx+=dx/d*amount;left.ty+=dy/d*amount;
+          right.tx-=dx/d*amount;right.ty-=dy/d*amount;}
       }
     }
     request();
@@ -268,29 +257,29 @@
         ctx.lineWidth=r===111?1:.6;circle(0,0,r);ctx.stroke();
       }
 
-      const groups=nodes.filter(n=>n.kind==='cluster');
-      const sectorCount=Math.max(8,groups.length);
-      for(let i=0;i<sectorCount;i++){
-        const a=-Math.PI/2+i*TAU/sectorCount;
+      for(const sector of sectorAngles){
+        const a=sector.start;
         ctx.strokeStyle='rgba(238,138,60,.12)';ctx.lineWidth=.65;
-        ctx.beginPath();ctx.moveTo(Math.cos(a)*81,Math.sin(a)*81);
-        ctx.lineTo(Math.cos(a)*244,Math.sin(a)*244);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(Math.cos(a)*82,Math.sin(a)*82);
+        ctx.lineTo(Math.cos(a)*245,Math.sin(a)*245);ctx.stroke();
       }
-      // Each actual topic has a labelled wedge and an outer-ring category marker.
       const icons={проекты:'◇',люди:'○',события:'◷',документы:'▤',решения:'✓',общее:'•'};
-      groups.forEach((group,i)=>{
-        const angle=-Math.PI/2+(i+.5)*TAU/sectorCount;
-        const nameRadius=257;
-        const x=Math.cos(angle)*nameRadius,y=Math.sin(angle)*nameRadius;
+      sectorAngles.forEach((sector,i)=>{
+        const group=sector.group,a=sector.middle;
+        const x=Math.cos(a)*254,y=Math.sin(a)*254;
         ctx.font='9px ui-monospace,Consolas,monospace';
-        ctx.textAlign=Math.cos(angle)>.28?'left':Math.cos(angle)<-.28?'right':'center';
+        ctx.textAlign=Math.cos(a)>.28?'left':Math.cos(a)<-.28?'right':'center';
         ctx.fillStyle=palette[i%palette.length];
-        ctx.fillText(group.label+' · '+group.count,x,y);
-        const outer=287,ox=Math.cos(angle)*outer,oy=Math.sin(angle)*outer;
+        ctx.fillText(group.label.slice(0,14)+' · '+group.count,x,y);
+        const ox=Math.cos(a)*287,oy=Math.sin(a)*287;
         ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=1;
         circle(ox,oy,10);ctx.stroke();
         ctx.textAlign='center';ctx.fillText(icons[group.topic]||'•',ox,oy+3);
       });
+      if(active||time<flashUntil){
+        ctx.strokeStyle=phase==='error'?'rgba(224,92,75,.6)':'rgba(238,138,60,.38)';
+        ctx.lineWidth=1.8;circle(0,0,65);ctx.stroke();
+      }
       ctx.globalAlpha=1;
 
     }
@@ -314,7 +303,7 @@
     // Clear provenance of highlighted edges: core -> thematic group -> dialogue -> message.
     for(const [a,b] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
-      const hot=recalled.has(from.id)||recalled.has(to.id)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
+      const hot=recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=hot?1.35:.7;
       ctx.strokeStyle=hot?'rgba(255,207,154,.75)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
       ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
@@ -335,6 +324,8 @@
     }
     for(const n of nodes){
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
+      const faded=hovered&&n.kind!=='core'&&n.group!==hovered.group;
+      if(faded)ctx.globalAlpha=.23;
       if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
       const size=core?22:cluster?12:chat?6.8:n.kind==='fact'?4:2.7;
@@ -364,6 +355,7 @@
         ctx.textAlign='center';ctx.font=(core?'bold 10px':'9px')+' ui-monospace,Consolas,monospace';
         ctx.fillText(core?'KIYOMIRA':n.label.slice(0,16),n.x,n.y+size+15);
       }
+      if(faded)ctx.globalAlpha=1;
     }
     ctx.restore();
   }
@@ -399,7 +391,7 @@
   }
   canvas.addEventListener('pointerdown',e=>{pointer=coord(e);moved=false;canvas.setPointerCapture(e.pointerId);});
   canvas.addEventListener('pointermove',e=>{
-    if(!pointer)return;
+    if(!pointer){const candidate=nearest(coord(e));if(candidate?.id!==hovered?.id){hovered=candidate;request();}return;}
     const p=coord(e),dx=p.x-pointer.x,dy=p.y-pointer.y;
     if(Math.abs(dx)+Math.abs(dy)>2)moved=true;
     if(moved){cameraTarget=null;pan.x+=dx;pan.y+=dy;request();}
@@ -415,6 +407,7 @@
     pointer=null;save();
   });
   canvas.addEventListener('pointercancel',()=>{pointer=null;});
+  canvas.addEventListener('pointerleave',()=>{hovered=null;request();});
   canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();},{passive:false});
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
   document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;request();save();});
