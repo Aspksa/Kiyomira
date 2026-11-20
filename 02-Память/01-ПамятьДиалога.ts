@@ -502,11 +502,13 @@ export class ПамятьДиалога {
     const documents=this.база.prepare(
       "SELECT ид,название,проект FROM документы_памяти ORDER BY ид DESC LIMIT 150"
     ).all() as {ид:number;название:string;проект:string}[];
-    const userMessages=this.база.prepare(
-      "SELECT ид,текст FROM сообщения WHERE роль='пользователь' AND диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 300"
-    ).all() as {ид:number;текст:string}[];
-    const semanticRelations=согласоватьОтношения(userMessages.flatMap(row=>
-      извлечьОтношения(row.текст,row.ид)),cap);
+    const stored=this.база.prepare(`SELECT источник_ид,тип,субъект,объект,фрагмент
+      FROM память_отношения_индекс ORDER BY источник_ид DESC LIMIT 600`
+    ).all() as {источник_ид:number;тип:ReturnType<typeof извлечьОтношения>[number]['тип'];
+      субъект:string;объект:string;фрагмент:string}[];
+    const semanticRelations=согласоватьОтношения(stored.map(row=>({...row,
+      статус:'кандидат' as const,уверенность:'явное_высказывание' as const,отрицание:false
+    })),cap);
     const entries=facts.flatMap(row=>извлечьСущностиСИсточником(
       row.ключ+': '+row.значение,row.источник_ид,row.статус==='подтверждено'));
     // Document IDs belong to a different namespace and cannot be passed off
@@ -522,7 +524,11 @@ export class ПамятьДиалога {
       время:временнаяМетка(row.значение,row.создано),
       версии:this.историяФакта(row.ид).slice(0,10)
     }));
-    return {сущности:entries.slice(0,cap),документы:docEntities.slice(0,cap),
+    const derivedEntities=this.база.prepare(`SELECT источник_ид,тип,название
+      FROM память_сущности_индекс ORDER BY источник_ид DESC LIMIT 300`
+    ).all() as {источник_ид:number;тип:string;название:string}[];
+    return {сущности:entries.slice(0,cap),производныеСущности:derivedEntities.slice(0,cap),
+      документы:docEntities.slice(0,cap),
       проектныеСвязи:projects.slice(0,cap),
       совпадения:связатьСущности(entries,cap),
       цепочки:цепочкиПоИсточникам(entries,cap),
@@ -537,10 +543,15 @@ export class ПамятьДиалога {
     const start=performance.now(),safeLimit=Math.max(1,Math.min(8,лимит));
     const query=запрос.trim();
     if(query.length<3)return [];
-    const rows=this.база.prepare(
-      "SELECT ид,текст FROM сообщения WHERE роль='пользователь' AND диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 300"
-    ).all() as {ид:number;текст:string}[];
-    const relations=согласоватьОтношения(rows.flatMap(row=>извлечьОтношения(row.текст,row.ид)),100);
+    // Query the persistent derived edge index instead of re-parsing 300
+    // messages. An idle worker incrementally backfills old conversations.
+    const rows=this.база.prepare(`SELECT источник_ид,тип,субъект,объект,фрагмент
+      FROM память_отношения_индекс ORDER BY источник_ид DESC LIMIT 600`
+    ).all() as {источник_ид:number;тип:ReturnType<typeof извлечьОтношения>[number]['тип'];
+      субъект:string;объект:string;фрагмент:string}[];
+    const relations=согласоватьОтношения(rows.map(row=>({...row,
+      статус:'кандидат' as const,уверенность:'явное_высказывание' as const,отрицание:false
+    })),100);
     const result=relations.map(row=>({...row,балл:релевантность(query,
       row.субъект+' '+row.объект+' '+row.тип)})).filter(row=>row.балл>=2.5)
       .sort((a,b)=>b.балл-a.балл||b.источники[0]-a.источники[0])
