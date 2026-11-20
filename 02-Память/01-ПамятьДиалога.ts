@@ -338,6 +338,16 @@ export class ПамятьДиалога {
     return relations.sort((a,b)=>b.сходство-a.сходство).slice(0,Math.min(300,Math.max(1,лимит)));
   }
 
+  // Age is only a review signal. Never change user-approved facts automatically.
+  устаревающиеФакты(дней=180,лимит=80){
+    const safeDays=Math.max(30,Math.min(3650,Math.trunc(дней)||180));
+    return this.база.prepare(`
+      SELECT ид,источник_ид,ключ,значение,создано,изменено
+      FROM факты_кандидаты WHERE статус='подтверждено'
+        AND julianday('now')-julianday(CASE WHEN изменено='' THEN создано ELSE изменено END)>?
+      ORDER BY ид DESC LIMIT ?`).all(safeDays,Math.max(1,Math.min(200,лимит)));
+  }
+
   противоречияФактов(лимит=60){
     const facts=this.база.prepare(
       "SELECT ид,источник_ид,ключ,значение FROM факты_кандидаты WHERE статус!='отклонено' ORDER BY ид DESC LIMIT 400"
