@@ -48,6 +48,17 @@ export class ПамятьДиалога {
       PRIMARY KEY (ответ_ид, источник_ид)
     )`);
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_источники_ответов_источник ON источники_ответов(источник_ид)');
+    // Documents are explicitly imported text, never guessed filesystem files.
+    this.база.exec(`CREATE TABLE IF NOT EXISTS документы_памяти (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      название TEXT NOT NULL,
+      проект TEXT NOT NULL DEFAULT '',
+      текст TEXT NOT NULL,
+      хеш TEXT NOT NULL UNIQUE,
+      создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_документы_проект ON документы_памяти(проект,ид)');
+
 
     this.база.exec('CREATE TABLE IF NOT EXISTS веб_настройки (ключ TEXT PRIMARY KEY, значение TEXT NOT NULL)');
     this.база.exec(`CREATE TABLE IF NOT EXISTS факты_кандидаты (
@@ -377,6 +388,42 @@ export class ПамятьДиалога {
   }
 
 
+
+  индексироватьДокумент(название:string,текст:string,проект=''){
+    if(typeof название!=='string'||!название.trim()||название.length>140)
+      throw new Error('Некорректное название документа');
+    if(typeof текст!=='string'||!текст.trim()||текст.length>32000)
+      throw new Error('Допустим только текст до 32000 символов');
+    if(typeof проект!=='string'||проект.length>100)
+      throw new Error('Некорректный проект');
+    const hash=createHash('sha256').update(название.trim()+'\\u0000'+проект.trim()+'\\u0000'+текст).digest('hex');
+    const saved=this.база.prepare(
+      'INSERT OR IGNORE INTO документы_памяти(название,проект,текст,хеш) VALUES(?,?,?,?)'
+    ).run(название.trim(),проект.trim(),текст,hash);
+    const row=this.база.prepare('SELECT ид FROM документы_памяти WHERE хеш=?')
+      .get(hash) as {ид:number};
+    return {id:row.ид,created:Boolean(saved.changes)};
+  }
+
+  списокДокументов(лимит=200){
+    return this.база.prepare(`SELECT ид,название,проект,создано,
+      length(текст) AS символов,substr(текст,1,200) AS фрагмент
+      FROM документы_памяти ORDER BY ид DESC LIMIT ?`)
+      .all(Math.max(1,Math.min(300,лимит)));
+  }
+
+  документПоИд(ид:number){
+    if(!Number.isSafeInteger(ид)||ид<1)return null;
+    return this.база.prepare(
+      'SELECT ид,название,проект,текст,создано FROM документы_памяти WHERE ид=?'
+    ).get(ид)||null;
+  }
+
+  удалитьДокумент(ид:number){
+    if(!Number.isSafeInteger(ид)||ид<1)throw new Error('Некорректный ID документа');
+    return this.база.prepare('DELETE FROM документы_памяти WHERE ид=?').run(ид).changes>0;
+  }
+
   // Explicit/manual embedding operations only; no automatic cloud calls.
   кандидатыВекторизации(модель:string,лимит=16){
     return this.база.prepare(`
@@ -444,6 +491,6 @@ export class ПамятьДиалога {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM источники_ответов; DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM документы_памяти; DELETE FROM источники_ответов; DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
   закрыть(): void { this.база.close(); }
 }

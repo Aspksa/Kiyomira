@@ -256,7 +256,7 @@ function modal(kind) {
   el('facts-panel').hidden=kind!=='facts';
   el('dialog-title').textContent=kind==='settings'?'Настройки Cloud.ru':kind==='facts'?'Проверка воспоминаний':'Поиск по памяти';
   if(kind==='settings')void loadSettings();
-  else if(kind==='facts'){void loadFacts();void refreshEmbeddingStatus();}
+  else if(kind==='facts'){void loadFacts();void loadDocuments();void refreshEmbeddingStatus();}
   else el('search-input').focus();
 }
 async function loadFacts() {
@@ -357,6 +357,54 @@ async function searchEmbeddings(){
       root.append(button);
     }
   }catch(err){feedback.textContent=err.message;}
+}
+
+async function loadDocuments(){
+  const list=el('doc-list'),feedback=el('doc-feedback');
+  list.replaceChildren();feedback.textContent='';
+  try{
+    const {documents}=await api('/api/memory/documents');
+    if(!documents.length){const hint=document.createElement('p');hint.className='hint';
+      hint.textContent='Нет индексированных документов';list.append(hint);}
+    for(const doc of documents){
+      const row=document.createElement('div');row.className='doc-row';
+      const button=document.createElement('button');button.type='button';
+      button.textContent=doc.название+(doc.проект?' · '+doc.проект:'');
+      button.addEventListener('click',()=>{void viewDocument(doc.ид);});
+      const remove=document.createElement('button');remove.type='button';
+      remove.className='danger';remove.textContent='Удалить';
+      remove.addEventListener('click',async()=>{
+        if(!confirm('Удалить индекс документа из локальной памяти?'))return;
+        try{await api('/api/memory/documents/'+doc.ид,'DELETE');
+          el('doc-preview').hidden=true;await loadDocuments();await refreshBrain();
+        }catch(err){feedback.textContent=err.message;}
+      });row.append(button,remove);list.append(row);
+    }
+  }catch(err){feedback.textContent=err.message;}
+}
+async function viewDocument(id){
+  try{
+    const {document:doc}=await api('/api/memory/documents/'+id);
+    const preview=el('doc-preview');
+    preview.hidden=false;
+    preview.textContent=doc.название+(doc.проект?' · '+doc.проект:'')+'\n\n'+doc.текст;
+    preview.scrollIntoView({block:'nearest'});
+  }catch(err){el('doc-feedback').textContent=err.message;}
+}
+async function indexDocument(){
+  const file=el('doc-upload').files?.[0],project=el('doc-project').value.trim();
+  if(!file){el('doc-feedback').textContent='Выберите TXT или MD';return;}
+  if(!/\.(txt|md)$/iu.test(file.name)||file.size>125000){
+    el('doc-feedback').textContent='Поддерживаются TXT/MD до 32 000 символов';return;
+  }
+  try{
+    const text=await file.text();
+    if(!text.trim()||text.length>32000)throw Error('Документ пуст или длиннее 32 000 символов');
+    const result=await api('/api/memory/documents','POST',{title:file.name,project,text});
+    el('doc-feedback').textContent=result.document.created?'Добавлено в SQLite':'Документ уже индексирован';
+    el('doc-upload').value='';
+    await loadDocuments();await refreshBrain();
+  }catch(err){el('doc-feedback').textContent=err.message;}
 }
 
 function closeModal(){el('overlay').hidden=true;}
@@ -538,6 +586,11 @@ async function bootstrap() {
   el('nav-settings').addEventListener('click',()=>modal('settings'));
   el('brain-facts').addEventListener('click',()=>modal('facts'));
   el('refresh-facts').addEventListener('click',()=>{void loadFacts();});
+  el('doc-index').addEventListener('click',()=>{void indexDocument();});
+  window.addEventListener('kiyomira-brain-document',event=>{
+    if(!event.detail?.documentId)return;
+    modal('facts');void viewDocument(event.detail.documentId);
+  });
   el('embedding-index').addEventListener('click',()=>{void indexEmbeddings();});
   el('embedding-search').addEventListener('click',()=>{void searchEmbeddings();});
   el('nav-search').addEventListener('click',()=>modal('search'));

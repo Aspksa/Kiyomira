@@ -49,6 +49,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
     assert.match(appSource,/initCognitiveFlow/);
+    assert.match(appSource,/indexDocument/);
     assert.match(appSource,/jumpToMessage/);
     assert.match(appSource,/focusSources/);
     assert.match(appSource,/KiyomiraUnity/);
@@ -71,9 +72,27 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(css,/Compact visualization controls/);
     assert.match(css,/--chat-percent/);
     assert.match(css,/workspace-divider/);
+
+    const imported=await request('/api/memory/documents','POST',{
+      title:'architecture.md',project:'Kiyomira',text:'# Архитектура\nSQLite и Canvas'
+    });
+    assert.equal(imported.status,201);
+    assert.equal(imported.data.document.created,true);
+    const documentId=imported.data.document.id;
+    assert.equal((await request('/api/memory/documents/'+documentId)).data.document.проект,'Kiyomira');
+    const duplicated=await request('/api/memory/documents','POST',{
+      title:'architecture.md',project:'Kiyomira',text:'# Архитектура\nSQLite и Canvas'
+    });
+    assert.equal(duplicated.data.document.created,false);
+    assert.equal((await request('/api/memory/documents')).data.documents.length,1);
+    assert.equal((await request('/api/memory/documents','POST',{
+      title:'bad.pdf',project:'',text:''
+    })).status,400);
     const emptyBrain=await request('/api/brain');
     assert.equal(emptyBrain.status,200);
     assert.deepEqual(emptyBrain.data.chats,[]);
+    assert.equal(emptyBrain.data.documents.length,1);
+    assert.equal(emptyBrain.data.documents[0].название,'architecture.md');
     const embeddingStatus=await request('/api/memory/embeddings/status');
     assert.equal(embeddingStatus.status,200);
     assert.equal(embeddingStatus.data.индексировано,0);
@@ -177,6 +196,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal((await request('/api/status')).data.verified,false);
     await request('/api/settings','POST',{clearKey:true});
     assert.equal((await request('/api/status')).data.provider,'unconfigured');
+    const deletedDocument=await request('/api/memory/documents/'+documentId,'DELETE');
+    assert.equal(deletedDocument.status,200);
+    assert.equal((await request('/api/memory/documents')).data.documents.length,0);
     await request('/api/chats/'+b,'DELETE');
     assert.equal((await request('/api/chats/'+b)).status,404);
     assert.equal(existsSync(process.env.KIYOMIRA_DB_PATH),true);

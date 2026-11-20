@@ -71,6 +71,8 @@
   // Themes are heuristic labels; only actual messages/known dialogue membership are facts.
   function update(data) {
     const chats=Array.isArray(data.chats)?data.chats:[];
+    const indexedDocs=Array.isArray(data.documents)?data.documents.slice(0,150):[];
+    const projectNames=[...new Set(indexedDocs.map(x=>String(x.проект||'').trim()).filter(Boolean))];
     const rows=Array.isArray(data.messages)?data.messages.slice(-1000):[];
     const previous=new Map(nodes.map(n=>[n.id,n]));
     const topics=['проекты','люди','события','документы','решения','общее'];
@@ -81,11 +83,12 @@
     for(const topic of topics) {
       const batch=buckets.get(topic);
       const actual=Math.max(batch.length,Number(data.topicTotals?.[topic])||0);
-      const range=Math.max(batch.length,actual>0?1:0);
+      const realIndexed=topic==='документы'?indexedDocs.length:topic==='проекты'?projectNames.length:0;
+      const range=Math.max(batch.length,actual>0||realIndexed>0?1:0);
       for(let i=0;i<range;i+=60){
         const items=batch.slice(i,i+60);
         const amount=batch.length?Math.max(items.length,Math.round(actual*items.length/batch.length)):actual;
-        groups.push({topic,key:topic+':'+i/60,items,label:label[topic],total:amount});
+        groups.push({topic,key:topic+':'+i/60,items,label:label[topic],total:amount+((i===0)?realIndexed:0)});
       }
     }
     const fresh=[{id:'core',kind:'core',x:0,y:0,tx:0,ty:0,label:'KIYOMIRA'}],links=[];
@@ -95,6 +98,24 @@
       fresh.push({id:'g'+g.key,kind:'cluster',label:g.label,group:i,count:g.total,topic:g.topic,x:old?.x,y:old?.y});
       groupPositions.set(g.key,idx);links.push([0,idx]);
     });
+    // Genuine documents and project labels appear only after explicit indexing.
+    const projectPositions=new Map();
+    const projectGroup=groups.findIndex(g=>g.topic==='проекты');
+    const documentGroup=groups.findIndex(g=>g.topic==='документы');
+    for(const name of projectNames){
+      const index=fresh.length,old=previous.get('p'+name);
+      fresh.push({id:'p'+name,kind:'project',label:name,group:projectGroup,count:indexedDocs.filter(d=>d.проект===name).length,
+        x:old?.x,y:old?.y});
+      projectPositions.set(name,index);
+      if(projectGroup>=0)links.push([groupPositions.get(groups[projectGroup].key),index]);
+    }
+    for(const doc of indexedDocs){
+      const index=fresh.length,old=previous.get('d'+doc.ид);
+      fresh.push({id:'d'+doc.ид,kind:'document',documentId:doc.ид,label:String(doc.название),
+        group:documentGroup,project:doc.проект,x:old?.x,y:old?.y});
+      if(documentGroup>=0)links.push([groupPositions.get(groups[documentGroup].key),index]);
+      if(doc.проект&&projectPositions.has(doc.проект))links.push([projectPositions.get(doc.проект),index]);
+    }
     const messagesByChat=new Map();
     for(const m of rows){if(!messagesByChat.has(m.chatId))messagesByChat.set(m.chatId,[]);messagesByChat.get(m.chatId).push(m);}
     for(const chat of chats) {
@@ -213,6 +234,34 @@
         }
       }
     }
+    const projectNodes=nodes.filter(n=>n.kind==='project');
+    const documentNodes=nodes.filter(n=>n.kind==='document');
+    projectNodes.forEach((project,i)=>{
+      const sector=sectorAngles.find(x=>x.group.group===project.group);
+      const origin=groups.find(g=>g.group===project.group);
+      if(mode==='circle'&&sector){
+        const a=sector.start+(i+.5)/Math.max(1,projectNodes.length)*(sector.end-sector.start);
+        project.tx=Math.cos(a)*142;project.ty=Math.sin(a)*142;
+      }else{
+        const a=i*2.3999632297;
+        project.tx=(origin?.tx||0)+Math.cos(a)*36;project.ty=(origin?.ty||0)+Math.sin(a)*36;
+      }
+      if(!Number.isFinite(project.x)){project.x=project.tx;project.y=project.ty;}
+    });
+    documentNodes.forEach((doc,i)=>{
+      const sector=sectorAngles.find(x=>x.group.group===doc.group);
+      const project=projectNodes.find(p=>p.label===doc.project);
+      if(mode==='circle'&&sector){
+        const peers=documentNodes.filter(n=>n.group===doc.group);
+        const index=peers.indexOf(doc),a=sector.start+(index+.5)/Math.max(1,peers.length)*(sector.end-sector.start);
+        doc.tx=Math.cos(a)*203;doc.ty=Math.sin(a)*203;
+      }else{
+        const a=i*2.3999632297;
+        doc.tx=(project?.tx||0)+Math.cos(a)*(24+6*Math.sqrt(i));
+        doc.ty=(project?.ty||0)+Math.sin(a)*(24+6*Math.sqrt(i));
+      }
+      if(!Number.isFinite(doc.x)){doc.x=doc.tx;doc.y=doc.ty;}
+    });
     const msgIndex=new Map(messages.map(n=>[n.messageId,n]));
     for(const fact of nodes.filter(n=>n.kind==='fact')){
       const source=msgIndex.get(fact.sourceId);
@@ -354,8 +403,8 @@
       if(faded)ctx.globalAlpha=.23;
       if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
-      const size=core?22:cluster?12:chat?6.8:n.kind==='fact'?4:2.7;
-      const color=core?'#ee8a3c':n.kind==='fact'?(n.status==='подтверждено'?'#80b6a1':n.status==='отклонено'?'#66544a':'#d7b17c'):palette[Math.abs(n.group||0)%palette.length];
+      const size=core?22:cluster?12:chat?6.8:n.kind==='project'?9:n.kind==='document'?5:n.kind==='fact'?4:2.7;
+      const color=core?'#ee8a3c':n.kind==='document'?'#7fb6a2':n.kind==='project'?'#ceb489':n.kind==='fact'?(n.status==='подтверждено'?'#80b6a1':n.status==='отклонено'?'#66544a':'#d7b17c'):palette[Math.abs(n.group||0)%palette.length];
       ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
       ctx.shadowColor=color;
       ctx.fillStyle=core?'#251306':recalled.has(n.id)?'#ffe3ae':isSelected?'#ffcf9a':color;
@@ -428,7 +477,8 @@
     if(!moved){
       const n=nearest(coord(e));selected=n;
       info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.kind==='fact'?'Кандидат факта · источник #'+n.sourceId+' · требует проверки: '+n.label:n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
-      if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId,messageId:n.messageId||n.sourceId||null}}));
+      if(n?.documentId)window.dispatchEvent(new CustomEvent('kiyomira-brain-document',{detail:{documentId:n.documentId}}));
+      else if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId,messageId:n.messageId||n.sourceId||null}}));
       request();
     }
     pointer=null;save();

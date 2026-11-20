@@ -427,3 +427,17 @@ html,body{height:100%;overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .unified-workspace .message{scroll-behavior:auto}
 }
+
+/* Document nodes only represent actual user-imported text in SQLite. */
+.indexed-documents{display:flex;flex-direction:column;gap:8px;margin-top:16px;padding:12px;
+  border:1px solid rgba(130,180,159,.24);background:#050504}
+.indexed-documents h3{font-size:.9rem;font-weight:500;color:#b6d1b9}
+.indexed-documents label{color:#c9b69f;font-size:12px}
+.indexed-documents input{max-width:100%;font-size:12px}
+.indexed-documents button{font-size:11px;min-height:32px}
+.doc-list{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.doc-row{display:flex;align-items:center;gap:7px}
+.doc-row button:first-child{flex:1;min-width:0;overflow-wrap:anywhere;text-align:left}
+.doc-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;
+  background:#080706;border:1px solid rgba(130,180,159,.23);padding:12px;
+  color:#decfbb;font:12px/1.6 var(--mono)}
