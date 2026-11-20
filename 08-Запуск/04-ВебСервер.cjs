@@ -151,8 +151,15 @@ async function создатьВебСервер({ корень = resolve(__dirna
         const candidates=кандидатыПротиворечий(snapshot.сообщения);
         return json(ответ,200,{
           chats,messages,totalMessages:snapshot.всегоСообщений,
-          candidates,latest:номерСобытия
+          candidates,facts:база.кандидатыФактов(200),factLinks:база.связиФактов(200),latest:номерСобытия
         });
+      }
+      if (запрос.method === 'GET' && путь === '/api/memory/search') {
+        const q=String(url.searchParams.get('q')||'').slice(0,160);
+        return json(ответ,200,{results:база.поискГибридный(q,12),method:'local-lexical-hybrid'});
+      }
+      if (запрос.method === 'GET' && путь === '/api/memory/facts') {
+        return json(ответ,200,{facts:база.кандидатыФактов(300),links:база.связиФактов(300)});
       }
       if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
       if (запрос.method === 'POST' && путь === '/api/chats') {
