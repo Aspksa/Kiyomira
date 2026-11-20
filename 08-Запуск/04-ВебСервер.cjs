@@ -82,7 +82,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (запрос.headers.origin && запрос.headers.origin !== origin) throw ошибка('Запрещённый Origin',403);
       if (запрос.headers['sec-fetch-site'] === 'cross-site') throw ошибка('Запрещён межсайтовый запрос',403);
       const url = new URL(запрос.url || '/', origin);
-      const путь = url.pathname;
+      const путь = decodeURIComponent(url.pathname);
       if (запрос.method === 'GET' && Object.hasOwn(TYPES, путь)) {
         const [файл, тип] = TYPES[путь];
         const данные = readFileSync(join(корень, файл));
