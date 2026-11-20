@@ -84,7 +84,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/if\(active&&!motion.matches&&edges.length\)/);
     const cssAsset=await fetch(url('/02-Стиль.css'));
     assert.equal(cssAsset.status,200);
-    const css=await cssAsset.text();
+    const unifiedAsset=await fetch(url('/05-ЕдиныйИнтерфейс.css'));
+    assert.equal(unifiedAsset.status,200);
+    const css=(await cssAsset.text())+'\n'+(await unifiedAsset.text());
     assert.match(css,/Compact visualization controls/);
     assert.match(css,/--chat-percent/);
     assert.match(css,/workspace-divider/);
