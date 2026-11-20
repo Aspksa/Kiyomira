@@ -8,7 +8,8 @@ const { randomBytes } = require('node:crypto');
 const TYPES = {
   '/': ['10-Веб/01-Страница.html', 'text/html; charset=utf-8'],
   '/02-Стиль.css': ['10-Веб/02-Стиль.css', 'text/css; charset=utf-8'],
-  '/03-Приложение.js': ['10-Веб/03-Приложение.js', 'text/javascript; charset=utf-8']
+  '/03-Приложение.js': ['10-Веб/03-Приложение.js', 'text/javascript; charset=utf-8'],
+  '/04-Мозг.js': ['10-Веб/04-Мозг.js', 'text/javascript; charset=utf-8']
 };
 
 function json(ответ, статус, данные) {
@@ -110,6 +111,16 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (!['GET','POST','PATCH','DELETE'].includes(запрос.method)) throw ошибка('Метод не поддерживается',405);
       if (запрос.method === 'GET' && путь === '/api/status') {
         return json(ответ,200,{ ready:true, provider:демоРежим ? 'demo' : ключ && модель ? 'cloud' : 'unconfigured', model:модель, keyPresent:!!ключ, verified:проверено, lastError:последняяОшибка, active:активные.size });
+      }
+      if (запрос.method === 'GET' && путь === '/api/brain') {
+        // Read-only view of actual saved conversations, not fabricated LLM activations.
+        const chats = база.списокДиалогов();
+        return json(ответ,200,{ chats:chats.slice(0,24).map(chat=>({
+          id:chat.ид,title:chat.название,
+          messages:база.сообщенияДиалога(chat.ид).slice(-6).map(item=>({
+            preview:String(item.текст||'').slice(0,90),role:item.роль
+          }))
+        })) });
       }
       if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
       if (запрос.method === 'POST' && путь === '/api/chats') {
