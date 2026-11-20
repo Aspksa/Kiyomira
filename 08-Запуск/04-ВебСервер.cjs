@@ -43,12 +43,13 @@ function idИзПути(путь) {
 
 async function создатьВебСервер({ корень = resolve(__dirname, '..'), порт = 0 } = {}) {
   // Reuse the existing TypeScript core, memory and cloud provider; do not duplicate response logic.
-  const [{ Ядро }, { ПамятьДиалога }, { ТестоваяМодель }, { ОблачнаяМодель }, { определитьТемы, кандидатыПротиворечий }] = await Promise.all([
+  const [{ Ядро }, { ПамятьДиалога }, { ТестоваяМодель }, { ОблачнаяМодель }, { определитьТемы, кандидатыПротиворечий }, { CloudEmbeddings, МОДЕЛЬ_ЭМБЕДДИНГОВ }] = await Promise.all([
     import('../01-Ядро/02-Управление.ts'),
     import('../02-Память/01-ПамятьДиалога.ts'),
     import('../04-Модели/02-ТестоваяМодель.ts'),
     import('../04-Модели/03-ОблачнаяМодель.ts'),
-    import('../02-Память/02-КартаЗнаний.ts')
+    import('../02-Память/02-КартаЗнаний.ts'),
+    import('../04-Модели/04-Эмбеддинги.ts')
   ]);
   const база = new ПамятьДиалога(200, process.env.KIYOMIRA_DB_PATH || join(корень, '06-Данные', 'память.sqlite'));
   let ключ = process.env.CLOUD_RU_API_KEY || '';
@@ -57,6 +58,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
   let проверено = false;
   let последняяОшибка = '';
   let закрывается = false;
+  let векторизацияЗанята = false;
   const активные = new Map();
   const ожидают = new Set();
   const демонстрация = new ТестоваяМодель();
@@ -166,6 +168,45 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (запрос.method === 'GET' && путь === '/api/memory/search') {
         const q=String(url.searchParams.get('q')||'').slice(0,160);
         return json(ответ,200,{results:база.поискГибридный(q,12),method:'local-lexical-hybrid'});
+      }
+      // Embeddings are opt-in, billable, and never run on chat/status/startup.
+      if (запрос.method === 'GET' && путь === '/api/memory/embeddings/status') {
+        return json(ответ,200,{
+          ...база.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ),
+          готово:!!ключ&&!демоРежим,занято:векторизацияЗанята,
+          экспериментально:true
+        });
+      }
+      if (запрос.method === 'POST' && путь === '/api/memory/embeddings/index') {
+        const параметры=await телоЗапроса(запрос);
+        if(параметры.confirm!==true)throw ошибка('Требуется явное согласие на платный запрос',400);
+        if(!ключ||демоРежим)throw ошибка('Для эмбеддингов необходим настоящий ключ Cloud.ru',409);
+        if(векторизацияЗанята)throw ошибка('Уже выполняется векторизация',409);
+        векторизацияЗанята=true;
+        try{
+          const rows=база.кандидатыВекторизации(МОДЕЛЬ_ЭМБЕДДИНГОВ,8);
+          if(!rows.length)return json(ответ,200,{indexed:0,...база.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ)});
+          const vectors=await new CloudEmbeddings(ключ)
+            .векторизовать(rows.map(row=>row.текст.slice(0,2400)));
+          const indexed=база.записатьВекторы(МОДЕЛЬ_ЭМБЕДДИНГОВ,
+            rows.map((row,i)=>({...row,вектор:vectors[i]})));
+          return json(ответ,200,{indexed,...база.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ)});
+        }finally{векторизацияЗанята=false;}
+      }
+      if (запрос.method === 'POST' && путь === '/api/memory/embeddings/search') {
+        const параметры=await телоЗапроса(запрос);
+        if(параметры.confirm!==true)throw ошибка('Требуется явное согласие на платный запрос',400);
+        if(!ключ||демоРежим)throw ошибка('Для эмбеддингов необходим настоящий ключ Cloud.ru',409);
+        if(typeof параметры.query!=='string'||параметры.query.trim().length<2||
+          параметры.query.length>2400)throw ошибка('Неверный смысловой запрос',400);
+        if(векторизацияЗанята)throw ошибка('Векторизация занята',409);
+        векторизацияЗанята=true;
+        try{
+          const [vector]=await new CloudEmbeddings(ключ)
+            .векторизовать([параметры.query.trim()]);
+          return json(ответ,200,{results:база.поискПоВекторам(МОДЕЛЬ_ЭМБЕДДИНГОВ,vector,12),
+            method:'cloudru-embeddings',experimental:true});
+        }finally{векторизацияЗанята=false;}
       }
       if (запрос.method === 'GET' && путь === '/api/memory/facts') {
         return json(ответ,200,{
