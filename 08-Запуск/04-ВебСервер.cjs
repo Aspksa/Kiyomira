@@ -138,8 +138,15 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{latest:номерСобытия,events:событияМозга.filter(e=>e.id>since).slice(-80)});
       }
       if (запрос.method === 'GET' && путь === '/api/brain') {
-        const snapshot = база.картаДиалогов(1000);
-        const messages = snapshot.сообщения.map(item=>({
+        // Read at most 10k persisted messages to count thematic clusters.
+        // Send only the newest 1000 source-backed nodes to keep Canvas responsive.
+        const snapshot = база.картаДиалогов(10000);
+        const topicTotals={проекты:0,люди:0,события:0,документы:0,решения:0,общее:0};
+        for(const row of snapshot.сообщения){
+          const key=определитьТемы(row.текст)[0]||'общее';
+          if(Object.hasOwn(topicTotals,key))topicTotals[key]++;
+        }
+        const messages = snapshot.сообщения.slice(-1000).map(item=>({
           id:item.ид,chatId:item.диалог_ид,role:item.роль,
           preview:String(item.текст||'').slice(0,160),at:item.время,
           topics:определитьТемы(item.текст)
@@ -151,6 +158,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
         const candidates=кандидатыПротиворечий(snapshot.сообщения);
         return json(ответ,200,{
           chats,messages,totalMessages:snapshot.всегоСообщений,
+          sampledMessages:messages.length,aggregateLimit:10000,topicTotals,
           candidates,facts:база.кандидатыФактов(200),factLinks:база.связиФактов(200),
           semanticLinks:база.связиПоСодержанию(120),factConflicts:база.противоречияФактов(60),latest:номерСобытия
         });
