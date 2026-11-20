@@ -177,6 +177,8 @@
       .filter(c=>factPositions.has(c.a)&&factPositions.has(c.b))
       .map(c=>({a:factPositions.get(c.a),b:factPositions.get(c.b)}));
     nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
+    // Indices may change after SQLite updates; never retain stale path highlights.
+    sourceRouteEdges.clear();routeUntil=0;
     chatIds=chats.map(c=>c.id);
     totalMessages=Number(data.totalMessages||rows.length);
     conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
@@ -686,6 +688,7 @@
   }
   window.KiyomiraBrain={
     update,setPhase,eventActivity,
+    setMode,
     focusSources:showAnswerRoute,
     showAnswerRoute,
     setSelectedChat(chatId){
@@ -693,7 +696,7 @@
       request();
     },
     getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
-    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size};},
+    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
