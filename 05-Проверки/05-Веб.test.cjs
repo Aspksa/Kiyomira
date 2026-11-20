@@ -309,6 +309,13 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   };
   // These are runtime checks, not mere syntax or string-match assertions.
   assert.doesNotThrow(()=>window.KiyomiraBrain.update(graph));
+  assert.match(source,/lastGraphFingerprint/);
+  const initialFrames=frames.length;
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(graph));
+  assert.equal(frames.length,initialFrames,'unchanged SQLite snapshot should not schedule a fresh layout');
+  const indexed={...graph,documents:[{ид:44,название:'architecture.md',проект:'Kiyomira'}]};
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(indexed));
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(indexed));
   assert.match(elements.get('brain-count').textContent,/3 сообщений/);
   assert.match(source,/Weighted stable radial sectors/);
   assert.match(source,/sectorAngles/);

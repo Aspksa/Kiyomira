@@ -19,6 +19,7 @@
   let flashUntil=0;
   let totalMessages=0,conflicts=[],factConflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   let cameraTarget=null,hovered=null,sectorAngles=[];
+  let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
@@ -74,6 +75,20 @@
     const indexedDocs=Array.isArray(data.documents)?data.documents.slice(0,150):[];
     const projectNames=[...new Set(indexedDocs.map(x=>String(x.проект||'').trim()).filter(Boolean))];
     const rows=Array.isArray(data.messages)?data.messages.slice(-1000):[];
+    // The graph is immutable between actual SQLite revisions. Avoid rebuilding
+    // every sector and all Canvas nodes for unchanged polling snapshots.
+    const fingerprint=JSON.stringify([
+      data.totalMessages||0,data.topicTotals||{},
+      chats.map(c=>[c.id,c.title,c.count]),
+      indexedDocs.map(d=>[d.ид,d.название,d.проект]),
+      rows.map(m=>[m.id,m.chatId,m.role,m.preview,m.topics]),
+      (data.facts||[]).map(f=>[f.ид,f.ключ,f.значение,f.статус]),
+      data.factLinks||[],data.semanticLinks||[],data.factConflicts||[],
+      data.candidates||[]
+    ]);
+    if(fingerprint===lastGraphFingerprint)return;
+    lastGraphFingerprint=fingerprint;
+
     const previous=new Map(nodes.map(n=>[n.id,n]));
     const topics=['проекты','люди','события','документы','решения','общее'];
     const label={проекты:'Проекты',люди:'Люди',события:'События',документы:'Документы',решения:'Решения',общее:'Прочее'};
@@ -162,7 +177,7 @@
     conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
     selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
     count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · показано '+rows.length+' · '+conflicts.length+' возможных конфликтов';
-    if(!selected)info.textContent=rows.length?'Нажмите на сообщение, чтобы открыть его в чате.':'Память пуста. Начните разговор.';
+    if(!selected)info.textContent=rows.length?'Нажмите на сообщение, чтобы открыть его в чате.':indexedDocs.length?'Откройте документ или проект на карте.':'Память пуста. Начните разговор.';
     layout();
     if(previous.size>1)flashUntil=now()+650;
     request();
