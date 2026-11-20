@@ -367,7 +367,7 @@ export class ПамятьДиалога {
       "SELECT ид,источник_ид,ключ,значение,статус FROM факты_кандидаты WHERE статус='подтверждено' ORDER BY ид DESC LIMIT 500"
     ).all() as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string}[];
     const normalize=(x:string)=>x.toLocaleLowerCase('ru').replace(/ё/g,'е')
-      .replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
+      .replace(/[^\p{L}\p{N}]+/gu,' ').trim();
     // A conflict anywhere in the confirmed sample blocks that entire key,
     // including intermediate nodes. Never propagate through disagreement.
     const meanings=new Map<string,Set<string>>();
