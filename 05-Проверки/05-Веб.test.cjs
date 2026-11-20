@@ -29,6 +29,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(html,/id="brain-zoom-out"/);
     assert.match(html,/id="cognitive-flow"/);
     assert.match(html,/id="cognitive-flow-path"/);
+    assert.match(html,/id="cognitive-comets"/);
     assert.match(html,/aria-orientation="vertical"/);
     assert.match(front.headers.get('content-security-policy'),/default-src 'self'/);
     const cookie=front.headers.get('set-cookie').split(';')[0];
@@ -56,6 +57,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/createStreamPainter/);
     assert.match(appSource,/requestAnimationFrame\(paint\)/);
     assert.match(appSource,/initCognitiveFlow/);
+    assert.match(appSource,/Sixteen tapered particles/);
+    assert.match(appSource,/getSourceScreenPoints/);
+    assert.match(appSource,/signal\('error'\)/);
     assert.match(appSource,/indexDocument/);
     assert.match(appSource,/jumpToMessage/);
     assert.match(appSource,/focusSources/);
@@ -68,6 +72,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/prefers-reduced-motion/);
     assert.match(brainSource,/setPhase/);
     assert.match(brainSource,/getCorePosition/);
+    assert.match(brainSource,/getSourceScreenPoints/);
     assert.match(brainSource,/setSelectedChat/);
     assert.match(brainSource,/brain-focus/);
     assert.match(brainSource,/brain.camera/);
