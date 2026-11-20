@@ -135,6 +135,14 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (запрос.method === 'GET' && путь === '/api/status') {
         return json(ответ,200,{ ready:true, provider:демоРежим ? 'demo' : ключ && модель ? 'cloud' : 'unconfigured', model:модель, keyPresent:!!ключ, verified:проверено, lastError:последняяОшибка, active:активные.size });
       }
+      // Local diagnostics: only aggregate timings and process memory, no prompts or keys.
+      if (запрос.method === 'GET' && путь === '/api/performance') {
+        const mem=process.memoryUsage();
+        return json(ответ,200,{uptimeSeconds:Math.round(process.uptime()),
+          rssBytes:mem.rss,heapUsedBytes:mem.heapUsed,
+          heapTotalBytes:mem.heapTotal,activeRequests:активные.size,
+          persistedMessages:база.размер(),brainEvents:событияМозга.length});
+      }
       if (запрос.method === 'GET' && путь === '/api/brain/events') {
         const since = Math.max(0, Number(url.searchParams.get('after'))||0);
         return json(ответ,200,{latest:номерСобытия,events:событияМозга.filter(e=>e.id>since).slice(-80)});
@@ -244,7 +252,8 @@ async function создатьВебСервер({ корень = resolve(__dirna
           facts:база.кандидатыФактов(300),
           links:база.связиФактов(300),
           related:база.связиПоСодержанию(120),
-          conflicts:база.противоречияФактов(60)
+          conflicts:база.противоречияФактов(60),
+          stale:база.устаревающиеФакты(180,80)
         });
       }
       if (запрос.method === 'GET' && путь === '/api/memory/facts/history') {
