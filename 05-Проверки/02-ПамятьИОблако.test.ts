@@ -110,3 +110,51 @@ test('карта памяти: темы, кандидаты противореч
     assert.equal(candidates[0].ключ,'версия');
   }finally{память.закрыть();}
 });
+
+
+test('Cloud.ru stream SSE handles UTF-8 chunks and rejects partial completions',async()=>{
+  const encoder=new TextEncoder();
+  const events=[
+    'data: {"choices":[{"delta":{"content":"При"}}]}\n',
+    '\ndata: {"choices":[{"delta":{"content":"вет"}}]}\n\n',
+    'data: [DONE]\n\n'
+  ];
+  const fake:typeof fetch=async(_url,options)=>{
+    const request=JSON.parse(String(options?.body));
+    assert.equal(request.stream,true);
+    return new Response(new ReadableStream({
+      start(controller){for(const e of events)controller.enqueue(encoder.encode(e));controller.close();}
+    }),{status:200,headers:{'Content-Type':'text/event-stream'}});
+  };
+  const cloud=new ОблачнаяМодель('тест-ключ','тест-модель',fake);
+  const pieces:string[]=[];
+  assert.equal(await cloud.создатьОтветПотоком([{роль:'пользователь',текст:'Привет'}],undefined,x=>pieces.push(x)),'Привет');
+  assert.deepEqual(pieces,['При','вет']);
+  const incomplete:typeof fetch=async()=>new Response('data: {"choices":[{"delta":{"content":"фрагмент"}}]}\n\n',{status:200});
+  const broken=new ОблачнаяМодель('тест-ключ','тест-модель',incomplete);
+  await assert.rejects(broken.создатьОтветПотоком([{роль:'пользователь',текст:'Тест'}],undefined,()=>{}),/поток завершён/);
+});
+
+test('streaming core writes atomic SQLite pair only after complete answer',async()=>{
+  const memory=new ПамятьДиалога(50);
+  const chat=memory.создатьДиалог('Streaming');
+  const core=new Ядро({
+    async создатьОтвет(){throw Error('Non-stream path unexpectedly called');},
+    async создатьОтветПотоком(_messages,_signal,onChunk){onChunk('Часть');onChunk(' ответа');return 'Часть ответа';}
+  },memory);
+  core.запустить();
+  const pieces:string[]=[];
+  assert.equal(await core.ответитьПотоком('Вопрос',chat,undefined,x=>pieces.push(x)),'Часть ответа');
+  assert.deepEqual(pieces,['Часть',' ответа']);
+  assert.deepEqual(memory.сообщенияДиалога(chat).map(x=>x.роль),['пользователь','ассистент']);
+  await core.остановить();memory.закрыть();
+  const failedMemory=new ПамятьДиалога(50),failedChat=failedMemory.создатьДиалог('Failure');
+  const failed=new Ядро({
+    async создатьОтвет(){throw Error('not called');},
+    async создатьОтветПотоком(_m,_s,onChunk){onChunk('Часть');throw Error('Interrupted');}
+  },failedMemory);
+  failed.запустить();
+  await assert.rejects(failed.ответитьПотоком('Вопрос',failedChat,undefined,()=>{}),/Interrupted/);
+  assert.equal(failedMemory.сообщенияДиалога(failedChat).length,0);
+  await failed.остановить();failedMemory.закрыть();
+});
