@@ -27,6 +27,8 @@
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   let categoryRings=[],categoryRadius=334,categoryGrowthAt=0,categorySignature='';
+  let categoryPrevious=new Map(),categoryMotion=false,layoutRevisions=0;
+  const categorySlots=12,categoryGap=46,categoryBase=336;
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
   // Fit both the original brain and new category rings within the viewport.
@@ -101,15 +103,23 @@
       })));
     const signature=categories.map(c=>c.id).join('|');
     if(signature!==categorySignature){categorySignature=signature;categoryGrowthAt=now();}
-    const ringCount=categories.length,expansion=Math.max(0,Math.min(4,ringCount-8))*8;
-    const ringTotal=Math.max(1,Math.ceil(ringCount/12));
-    categoryRadius=334+expansion+42*(ringTotal-1);
+    // Fixed angular slots preserve old category positions when newcomers arrive.
+    // Rings grow only outward; an incomplete row keeps exactly the same slots.
+    const ringCount=categories.length;
+    const expansion=Math.max(0,Math.min(4,ringCount-8))*8;
+    const ringTotal=Math.max(1,Math.ceil(ringCount/categorySlots));
+    categoryRadius=categoryBase+expansion+categoryGap*(ringTotal-1);
     categoryRings=categories.map((c,i)=>{
-      const ring=Math.floor(i/12),slot=i%12;
-      const slots=Math.min(12,ringCount-ring*12),radius=334+expansion+42*ring;
-      const angle=-Math.PI/2+(slot+.5)*TAU/Math.max(1,slots);
-      return {...c,ring:ring+1,angle,radius,x:Math.cos(angle)*radius,y:Math.sin(angle)*radius};
+      const ring=Math.floor(i/categorySlots),slot=i%categorySlots;
+      const radius=categoryBase+expansion+categoryGap*ring;
+      const angle=-Math.PI/2+(slot+.5)*TAU/categorySlots;
+      const destination=polar(angle,radius);
+      const previous=categoryPrevious.get(c.id);
+      return {...c,ring:ring+1,slot,angle,radius,tx:destination.x,ty:destination.y,
+        x:previous?.x??destination.x,y:previous?.y??destination.y};
     });
+    categoryPrevious=new Map(categoryRings.map(c=>[c.id,{x:c.x,y:c.y}]));
+    categoryMotion=categoryRings.some(c=>Math.abs(c.tx-c.x)+Math.abs(c.ty-c.y)>.3);
     // The graph is immutable between actual SQLite revisions. Avoid rebuilding
     // every sector and all Canvas nodes for unchanged polling snapshots.
     const fingerprint=JSON.stringify([
@@ -227,6 +237,7 @@
     const chats=nodes.filter(n=>n.kind==='chat');
     const messages=nodes.filter(n=>n.kind==='message');
     const animateNew=nodes.length<=600&&!motion.matches;
+    layoutRevisions++;
     const byGroup=new Map(groups.map(n=>[n.group,[]]));
     for(const chat of chats)byGroup.get(chat.group)?.push(chat);
     const byChat=new Map(chats.map(n=>[n.chatId,[]]));
@@ -267,14 +278,28 @@
     for(const sector of sectorAngles){
       const peers=messages.filter(n=>n.group===sector.group.group);
       if(mode==='circle'){
-        const width=sector.end-sector.start,margin=Math.min(.05,width*.1);
-        const cols=Math.max(1,Math.min(28,Math.floor(width*170/5)));
-        const rows=Math.max(1,Math.ceil(peers.length/cols));
+        // Arc-length lattice: fixed radial pitch and angular cell width.
+        // When a sector is full, use extra rows rather than squeezing dots.
+        const margin=Math.min(.045,(sector.end-sector.start)*.1);
+        const usable=Math.max(.012,sector.end-sector.start-2*margin);
+        const firstRadius=167,lastRadius=238,radialPitch=9,arcPitch=8;
+        const rows=Math.floor((lastRadius-firstRadius)/radialPitch)+1;
+        const rings=Array.from({length:rows},(_,row)=>{
+          const radius=firstRadius+row*radialPitch;
+          return {radius,cells:Math.max(1,Math.floor(usable*radius/arcPitch))};
+        });
+        const capacity=rings.reduce((acc,r)=>acc+r.cells,0);
         peers.forEach((msg,i)=>{
-          const row=i%rows,col=Math.floor(i/rows);
-          const used=Math.max(1,Math.ceil(peers.length/rows));
-          const a=sector.start+margin+(col+.5)/used*(width-2*margin);
-          const r=169+(row+.5)/rows*67;
+          // Overflow uses a deterministic multi-pass lattice; cull the tiniest
+          // symbols on overview instead of letting coordinates collide.
+          const pass=Math.floor(i/Math.max(1,capacity));
+          let cell=i%Math.max(1,capacity),ring=rings[0];
+          for(const candidate of rings){
+            if(cell<candidate.cells){ring=candidate;break;}
+            cell-=candidate.cells;
+          }
+          const a=sector.start+margin+(cell+.5)*usable/ring.cells;
+          const r=ring.radius+pass*.55;
           msg.tx=Math.cos(a)*r;msg.ty=Math.sin(a)*r;
           if(!Number.isFinite(msg.x)){
             const parent=chats.find(c=>c.chatId===msg.chatId);
@@ -671,6 +696,15 @@
   function interpolate(){
     if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}if(cameraTarget){pan=cameraTarget;cameraTarget=null;}if(zoomTarget!==null){zoom=zoomTarget;zoomTarget=null;syncZoom();}return false;}
     let moving=false;
+    // Animate the outer category shell without changing stable target slots.
+    for(const category of categoryRings){
+      if(motion.matches){category.x=category.tx;category.y=category.ty;continue;}
+      const dx=category.tx-category.x,dy=category.ty-category.y;
+      if(Math.abs(dx)+Math.abs(dy)>.2){
+        category.x+=dx*.16;category.y+=dy*.16;moving=true;
+      }else{category.x=category.tx;category.y=category.ty;}
+    }
+    categoryMotion=moving;
     if(zoomTarget!==null){
       const diff=zoomTarget-zoom;
       if(Math.abs(diff)>.003){zoom+=diff*.2;moving=true;}
@@ -705,7 +739,7 @@
         renderStep=lastDrawCost>25?50:lastDrawCost>13||nodes.length>850?33:25;
       }
     }
-    if(active||moving||t<flashUntil||phase==='response'&&t-phaseAt<1500||phase==='error'&&t-phaseAt<1200)request();
+    if(active||moving||t<categoryGrowthAt+520||t<flashUntil||phase==='response'&&t-phaseAt<1500||phase==='error'&&t-phaseAt<1200)request();
     else if(phase!=='idle')setPhase('idle');
   }
   function coord(ev){const b=canvas.getBoundingClientRect();return{x:ev.clientX-b.left,y:ev.clientY-b.top};}
@@ -836,7 +870,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {categoryCount:categoryRings.length,categoryRings:Math.max(1,Math.ceil(categoryRings.length/12)),categoryRadius,fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
+    getViewportStats(){return {categoryCount:categoryRings.length,categoryRings:Math.max(1,Math.ceil(categoryRings.length/categorySlots)),categoryRadius,layoutRevisions,categoryMotion,fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
