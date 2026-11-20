@@ -217,10 +217,72 @@ function modal(kind) {
   el('overlay').hidden=false;
   el('settings-panel').hidden=kind!=='settings';
   el('search-panel').hidden=kind!=='search';
-  el('dialog-title').textContent=kind==='settings'?'Настройки Cloud.ru':'Поиск по памяти';
+  el('facts-panel').hidden=kind!=='facts';
+  el('dialog-title').textContent=kind==='settings'?'Настройки Cloud.ru':kind==='facts'?'Проверка воспоминаний':'Поиск по памяти';
   if(kind==='settings')void loadSettings();
+  else if(kind==='facts')void loadFacts();
   else el('search-input').focus();
 }
+async function loadFacts() {
+  const root=el('facts-list');root.replaceChildren();
+  const feedback=el('facts-feedback');feedback.textContent='';
+  try{
+    const payload=await api('/api/memory/facts');
+    const facts=payload.facts||[];
+    const conflicts=payload.conflicts||[];
+    el('facts-summary').textContent=facts.length+' записей · '+conflicts.length+' возможных противоречий';
+    if(!facts.length){const p=document.createElement('p');p.className='hint';
+      p.textContent='Кандидатов пока нет. Например: «Я предпочитаю тёмную тему».';
+      root.append(p);return;}
+    for(const fact of facts){
+      const item=document.createElement('article');item.className='fact-item';
+      item.setAttribute('role','listitem');
+      const name=document.createElement('strong');
+      name.textContent=fact.ключ+': '+fact.значение;
+      const meta=document.createElement('p');meta.className='hint';
+      meta.textContent='Источник #'+fact.источник_ид+
+        ' · '+fact.статус+' · '+fact.создано;
+      const actions=document.createElement('div');actions.className='fact-actions';
+      for(const [label,status] of [['Подтвердить','подтверждено'],['Отклонить','отклонено']]){
+        const button=document.createElement('button');button.type='button';
+        button.textContent=label;button.disabled=fact.статус===status;
+        button.addEventListener('click',async()=>{
+          try{await api('/api/memory/facts/'+fact.ид,'PATCH',{status});
+            await loadFacts();await refreshBrain();
+          }catch(err){feedback.textContent=err.message;}
+        });actions.append(button);
+      }
+      const edit=document.createElement('button');edit.textContent='Исправить';
+      edit.type='button';
+      edit.addEventListener('click',async()=>{
+        const changed=prompt('Исправленное значение (источник останется прежним)',fact.значение);
+        if(changed===null)return;
+        try{await api('/api/memory/facts/'+fact.ид,'PATCH',
+          {status:'требует проверки',value:changed.trim()});
+          await loadFacts();await refreshBrain();
+        }catch(err){feedback.textContent=err.message;}
+      });actions.append(edit);
+      const timeline=document.createElement('button');timeline.type='button';
+      timeline.textContent='История';
+      timeline.addEventListener('click',async()=>{
+        try{
+          const {history}=await api('/api/memory/facts/history?id='+fact.ид);
+          const existing=item.querySelector('.fact-timeline');
+          if(existing){existing.remove();return;}
+          const ul=document.createElement('ul');ul.className='fact-timeline';
+          for(const event of history){
+            const li=document.createElement('li');
+            li.textContent=event.время+' · '+event.действие+
+              ' · '+event.статус+' · '+event.значение;ul.append(li);
+          }
+          item.append(ul);
+        }catch(err){feedback.textContent=err.message;}
+      });actions.append(timeline);
+      item.append(name,meta,actions);root.append(item);
+    }
+  }catch(err){feedback.textContent=err.message;}
+}
+
 function closeModal(){el('overlay').hidden=true;}
 async function loadSettings(){
   const result=await api('/api/settings');
@@ -341,6 +403,8 @@ async function bootstrap() {
   el('nav-chat').addEventListener('click',()=>{closeModal();el('sidebar').classList.toggle('mobile-open');});
   el('mobile-list').addEventListener('click',()=>el('sidebar').classList.toggle('mobile-open'));
   el('nav-settings').addEventListener('click',()=>modal('settings'));
+  el('brain-facts').addEventListener('click',()=>modal('facts'));
+  el('refresh-facts').addEventListener('click',()=>{void loadFacts();});
   el('nav-search').addEventListener('click',()=>modal('search'));
   el('dialog-close').addEventListener('click',closeModal);
   el('overlay').addEventListener('click',event=>{if(event.target===el('overlay'))closeModal();});

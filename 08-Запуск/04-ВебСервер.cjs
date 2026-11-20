@@ -151,7 +151,8 @@ async function создатьВебСервер({ корень = resolve(__dirna
         const candidates=кандидатыПротиворечий(snapshot.сообщения);
         return json(ответ,200,{
           chats,messages,totalMessages:snapshot.всегоСообщений,
-          candidates,facts:база.кандидатыФактов(200),factLinks:база.связиФактов(200),latest:номерСобытия
+          candidates,facts:база.кандидатыФактов(200),factLinks:база.связиФактов(200),
+          semanticLinks:база.связиПоСодержанию(120),factConflicts:база.противоречияФактов(60),latest:номерСобытия
         });
       }
       if (запрос.method === 'GET' && путь === '/api/memory/search') {
@@ -159,7 +160,31 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{results:база.поискГибридный(q,12),method:'local-lexical-hybrid'});
       }
       if (запрос.method === 'GET' && путь === '/api/memory/facts') {
-        return json(ответ,200,{facts:база.кандидатыФактов(300),links:база.связиФактов(300)});
+        return json(ответ,200,{
+          facts:база.кандидатыФактов(300),
+          links:база.связиФактов(300),
+          related:база.связиПоСодержанию(120),
+          conflicts:база.противоречияФактов(60)
+        });
+      }
+      if (запрос.method === 'GET' && путь === '/api/memory/facts/history') {
+        const id=Number(url.searchParams.get('id'));
+        if(!Number.isSafeInteger(id)||id<1)throw ошибка('Некорректный ID',400);
+        return json(ответ,200,{history:база.историяФакта(id)});
+      }
+      const factRoute=путь.match(/^\/api\/memory\/facts\/(\d+)$/);
+      if (запрос.method === 'PATCH' && factRoute) {
+        const данные=await телоЗапроса(запрос);
+        if(!['подтверждено','отклонено','требует проверки'].includes(данные.status))
+          throw ошибка('Недопустимый статус факта',400);
+        if(данные.value!==undefined&&(typeof данные.value!=='string'||!данные.value.trim()||данные.value.length>240))
+          throw ошибка('Недопустимое исправление',400);
+        try {
+          return json(ответ,200,{fact:база.изменитьФакт(Number(factRoute[1]),данные.status,данные.value)});
+        } catch(error){
+          if(error instanceof Error&&/не найден/.test(error.message))throw ошибка(error.message,404);
+          throw error;
+        }
       }
       if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
       if (запрос.method === 'POST' && путь === '/api/chats') {

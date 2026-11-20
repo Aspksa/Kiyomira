@@ -17,7 +17,7 @@
   let pan={x:0,y:0},zoom=1,width=0,height=0,pointer=null,moved=false;
   let visible=!document.hidden,raf=0,lastTick=0,active=false,phase='idle',phaseAt=0;
   let flashUntil=0;
-  let totalMessages=0,conflicts=[],recalled=new Set(),focus=false,phaseChat=null;
+  let totalMessages=0,conflicts=[],factConflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   let cameraTarget=null,hovered=null,sectorAngles=[];
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
@@ -120,6 +120,13 @@
       const a=factPositions.get(edge.a),b=factPositions.get(edge.b);
       if(a!==undefined&&b!==undefined)links.push([a,b]);
     }
+    for(const edge of (Array.isArray(data.semanticLinks)?data.semanticLinks:[]).slice(0,150)){
+      const a=factPositions.get(edge.a),b=factPositions.get(edge.b);
+      if(a!==undefined&&b!==undefined)links.push([a,b,'lexical']);
+    }
+    factConflicts=(Array.isArray(data.factConflicts)?data.factConflicts:[])
+      .filter(c=>factPositions.has(c.a)&&factPositions.has(c.b))
+      .map(c=>({a:factPositions.get(c.a),b:factPositions.get(c.b)}));
     nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
     chatIds=chats.map(c=>c.id);
     totalMessages=Number(data.totalMessages||rows.length);
@@ -305,12 +312,17 @@
     // The circle keeps labels and dense grids inside the surrounding category ring.
     // Relations are still backed by SQLite source IDs.
     // Clear provenance of highlighted edges: core -> thematic group -> dialogue -> message.
-    for(const [a,b] of edges){
+    for(const relation of factConflicts){
+      const left=nodes[relation.a],right=nodes[relation.b];if(!left||!right)continue;
+      ctx.strokeStyle='rgba(224,92,75,.52)';ctx.lineWidth=1;ctx.setLineDash([3,5]);
+      ctx.beginPath();ctx.moveTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.stroke();ctx.setLineDash([]);
+    }
+    for(const [a,b,relationType] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
       if(zoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
       const hot=recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=hot?1.35:.7;
-      ctx.strokeStyle=hot?'rgba(255,207,154,.75)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
+      ctx.strokeStyle=hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
       ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
     }
     // During a real request, light pulses travel along the existing graph only.
@@ -334,7 +346,7 @@
       if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
       const size=core?22:cluster?12:chat?6.8:n.kind==='fact'?4:2.7;
-      const color=core?'#ee8a3c':n.kind==='fact'?'#d7b17c':palette[Math.abs(n.group||0)%palette.length];
+      const color=core?'#ee8a3c':n.kind==='fact'?(n.status==='подтверждено'?'#80b6a1':n.status==='отклонено'?'#66544a':'#d7b17c'):palette[Math.abs(n.group||0)%palette.length];
       ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
       ctx.shadowColor=color;
       ctx.fillStyle=core?'#251306':recalled.has(n.id)?'#ffe3ae':isSelected?'#ffcf9a':color;
