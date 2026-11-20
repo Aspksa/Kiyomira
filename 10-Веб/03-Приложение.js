@@ -111,9 +111,11 @@ async function newChat() {
 async function updateStatus() {
   const result=await api('/api/status');
   const status=el('connection');
-  status.className='status '+(result.provider==='cloud'?'ok':'');
-  status.textContent=result.provider==='cloud'?'Cloud.ru · '+result.model:'ДЕМО · Cloud.ru не подключён';
-  el('subtitle').textContent=result.provider==='cloud'?'Локальная память · Cloud.ru':'Локальная память · тестовая модель';
+  const active=result.provider==='cloud' && result.verified;
+  status.className='status '+(active?'ok':result.provider==='unconfigured'?'err':'');
+  status.textContent=result.provider==='demo'?'ДЕМО · тестовая модель':result.provider==='unconfigured'?'Cloud.ru не настроен':active?'Cloud.ru проверен · '+result.model:'Cloud.ru · '+result.model+' · не проверен';
+  el('subtitle').textContent=result.provider==='demo'?'Только тестовые ответы':result.provider==='unconfigured'?'Укажите ключ и модель Cloud.ru':'Локальная память · Cloud.ru';
+  if(result.lastError && !state.busy) notice(result.lastError);
 }
 async function sendMessage(ev) {
   ev.preventDefault();
@@ -137,6 +139,7 @@ async function sendMessage(ev) {
     temp.remove();
     input.value=text;
     notice(err.message);
+    await updateStatus().catch(()=>{});
     if(!el('messages').children.length)emptyMessages();
   } finally {
     buttonBusy(false);input.focus();
@@ -159,6 +162,7 @@ function closeModal(){el('overlay').hidden=true;}
 async function loadSettings(){
   const result=await api('/api/settings');
   el('model-name').value=result.model||'';
+  el('demo-mode').checked=Boolean(result.demoMode);
   el('api-key').value='';
   el('key-state').textContent=result.keyPresent?'API-ключ установлен на эту сессию':'API-ключ не установлен';
   el('settings-feedback').textContent='';
@@ -169,7 +173,7 @@ async function saveSettings(event) {
   try {
     const model=el('model-name').value.trim();
     const apiKey=el('api-key').value;
-    const payload={model};
+    const payload={model,demoMode:el('demo-mode').checked};
     if(apiKey)payload.apiKey=apiKey;
     await api('/api/settings','POST',payload);
     el('api-key').value='';
@@ -192,7 +196,8 @@ async function testCloud() {
   try {
     feedback('Проверяю подключение...');
     const result=await api('/api/test','POST',{});
-    feedback(result.listed?'Cloud.ru доступен, модель найдена':'Cloud.ru доступен; выбранная модель не найдена в списке',result.listed);
+    feedback(result.listed?'Ключ принят и выбранная модель есть в списке. Генерация ещё не проверена.':'Ключ принят, но выбранная модель не найдена. Выберите модель из списка.',result.listed);
+    await updateStatus();
   }catch(err){feedback(err.message);}
 }
 async function search() {
