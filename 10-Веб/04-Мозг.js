@@ -16,9 +16,9 @@
   let mode='circle',nodes=[],edges=[],chatIds=[],selected=null,selectedChat=null;
   let pan={x:0,y:0},zoom=1,width=0,height=0,pointer=null,moved=false;
   let visible=!document.hidden,raf=0,lastTick=0,active=false,phase='idle',phaseAt=0;
-  let flashUntil=0,arrivals=[],layoutStarted=0;
+  let flashUntil=0;
+  let totalMessages=0,conflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
-  const preview=x=>String(x??'').slice(0,90);
   const now=()=>performance.now();
 
   function polar(a,r){return{x:Math.cos(a)*r,y:Math.sin(a)*r};}
@@ -62,7 +62,6 @@
       }
       if(!Number.isFinite(node.x)){node.x=node.tx;node.y=node.ty;}
     }
-    layoutStarted=now();
     request();
   }
   // Themes are heuristic labels; only actual messages/known dialogue membership are facts.
@@ -191,7 +190,7 @@
       // Small data-driven arc ticks: number of ticks derives from saved messages.
       nodes.filter(n=>n.kind==='message').forEach((node,i)=>{
         const a=Math.atan2(node.y,node.x),rr=248+(i%3)*6;
-        ctx.strokeStyle=palette[node.group%palette.length];ctx.globalAlpha=.52;
+        ctx.strokeStyle=palette[Math.abs(node.group||0)%palette.length];ctx.globalAlpha=.52;
         ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
         ctx.lineTo(Math.cos(a)*(rr+4),Math.sin(a)*(rr+4));ctx.stroke();
       });
@@ -238,7 +237,7 @@
       if(n.kind==='message'&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
       const size=core?22:cluster?12:chat?6.8:2.7;
-      const color=core?'#ee8a3c':palette[n.group%palette.length];
+      const color=core?'#ee8a3c':palette[Math.abs(n.group||0)%palette.length];
       ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
       ctx.shadowColor=color;
       ctx.fillStyle=core?'#251306':recalled.has(n.id)?'#ffe3ae':isSelected?'#ffcf9a':color;
