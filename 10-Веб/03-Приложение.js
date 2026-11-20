@@ -137,6 +137,39 @@ async function updateStatus() {
   el('subtitle').textContent=result.provider==='demo'?'Только тестовые ответы':result.provider==='unconfigured'?'Укажите ключ и модель Cloud.ru':'Локальная память · Cloud.ru';
   if(result.lastError && !state.busy) notice(result.lastError);
 }
+async function streamReply(chatId,text,onChunk) {
+  const response=await fetch('/api/chats/'+chatId+'/message-stream',{
+    method:'POST',credentials:'same-origin',
+    headers:{...headers,'Content-Type':'application/json'},
+    body:JSON.stringify({text})
+  });
+  if(!response.ok){
+    const payload=await response.json().catch(()=>({}));
+    throw new Error(payload.error||'Ошибка HTTP '+response.status);
+  }
+  if(!response.body)throw new Error('Сервер не вернул поток ответа');
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  let buffer='',completed=false;
+  try{
+    while(true){
+      const next=await reader.read();
+      if(next.done)break;
+      buffer+=decoder.decode(next.value,{stream:true});
+      if(buffer.length>262144)throw new Error('Слишком длинный фрагмент потока');
+      let index;
+      while((index=buffer.indexOf('\n'))>=0){
+        const row=buffer.slice(0,index).trim();buffer=buffer.slice(index+1);
+        if(!row)continue;
+        const event=JSON.parse(row);
+        if(event.type==='chunk')onChunk(String(event.text||''));
+        else if(event.type==='done')completed=true;
+        else if(event.type==='error')throw new Error(String(event.text||'Генерация прервана'));
+      }
+    }
+    if(!completed)throw new Error('Поток прерван, ответ не сохранён');
+  }finally{reader.releaseLock();}
+}
+
 async function sendMessage(ev) {
   ev.preventDefault();
   if(state.busy || !state.selected)return;
@@ -148,18 +181,24 @@ async function sendMessage(ev) {
   if(el('messages').querySelector('.empty'))el('messages').replaceChildren();
   const temp=message('пользователь',text,true);
   try {
-    const result=await api('/api/chats/'+id+'/message','POST',{text});
-    temp.remove();
+    const partial=message('ассистент','',true);
+    let full='';
+    await streamReply(id,text,part=>{
+      full+=part;
+      partial.querySelector('.message-body').innerHTML=markdown(full);
+      el('messages').scrollTop=el('messages').scrollHeight;
+    });
+    temp.remove();partial.remove();
     const {messages}=await api('/api/chats/'+id);
     el('messages').replaceChildren();
     for(const item of messages)message(item.роль,item.текст);
     window.KiyomiraBrain?.setPhase('response');
-    if(!result.reply)notice('Пустой ответ модели');
     await pollBrainEvents().catch(()=>{});
     await refreshChats();
   } catch(err) {
     window.KiyomiraBrain?.setPhase('error');
     temp.remove();
+    el('messages').querySelectorAll('[data-temporary="1"]').forEach(node=>node.remove());
     input.value=text;
     notice(err.message);
     await updateStatus().catch(()=>{});

@@ -34,7 +34,7 @@ async function телоЗапроса(запрос) {
   } catch { throw ошибка('Неверный JSON'); }
 }
 function idИзПути(путь) {
-  const совпадение = /^\/api\/chats\/(\d+)(?:\/(message|stop))?$/.exec(путь);
+  const совпадение = /^\/api\/chats\/(\d+)(?:\/(message|message-stream|stop))?$/.exec(путь);
   if (!совпадение) return null;
   const ид = Number(совпадение[1]);
   if (!Number.isSafeInteger(ид) || ид < 1) throw ошибка('Неверный номер диалога');
@@ -61,6 +61,14 @@ async function создатьВебСервер({ корень = resolve(__dirna
   const ожидают = new Set();
   const демонстрация = new ТестоваяМодель();
   const провайдер = {
+    async создатьОтветПотоком(история, сигнал, onChunk) {
+      if (демоРежим) {const text=await демонстрация.создатьОтвет(история);onChunk(text);return text;}
+      if (!ключ || !модель) throw ошибка('Cloud.ru не настроен: укажите API-ключ и модель в настройках',409);
+      try {
+        const result=await new ОблачнаяМодель(ключ,модель).создатьОтветПотоком(история,сигнал,onChunk);
+        последняяОшибка='';проверено=true;return result;
+      }catch(err){последняяОшибка=err instanceof Error?err.message:'Сбой потока Cloud.ru';проверено=false;throw err;}
+    },
     async создатьОтвет(история, сигнал) {
       if (демоРежим) return демонстрация.создатьОтвет(история);
       if (!ключ || !модель) throw ошибка('Cloud.ru не настроен: укажите API-ключ и модель в настройках', 409);
@@ -228,6 +236,37 @@ async function создатьВебСервер({ корень = resolve(__dirna
         if (запрос.method === 'POST' && chat.действие === 'stop') {
           активные.get(chat.ид)?.abort();
           return json(ответ,200,{ stopped:true });
+        }
+        if (запрос.method === 'POST' && chat.действие === 'message-stream') {
+          const данные=await телоЗапроса(запрос);
+          if(typeof данные.text!=='string'||!данные.text.trim()||данные.text.length>20000)
+            throw ошибка('Сообщение должно содержать 1–20000 символов');
+          if(активные.has(chat.ид))throw ошибка('Уже выполняется ответ в этом диалоге',409);
+          const controller=new AbortController();
+          активные.set(chat.ид,controller);
+          ответ.setHeader('Content-Type','application/x-ndjson; charset=utf-8');
+          ответ.setHeader('Cache-Control','no-store, no-transform');
+          ответ.setHeader('X-Accel-Buffering','no');
+          ответ.flushHeaders();
+          const emit=(type,text='')=>{
+            if(!ответ.destroyed&&!ответ.writableEnded)ответ.write(JSON.stringify({type,text})+'\n');
+          };
+          ответ.on('close',()=>{if(!ответ.writableEnded)controller.abort();});
+          const work=ядро.ответитьПотоком(данные.text,chat.ид,controller.signal,chunk=>emit('chunk',chunk));
+          ожидают.add(work);
+          try{
+            await work;
+            emit('done');
+          }catch(err){
+            const message=controller.signal.aborted?'Запрос отменён':
+              err instanceof Error&&(/Cloud.ru|поток|Пустой ответ/.test(err.message))?err.message:
+              'Не удалось получить ответ';
+            emit('error',message);
+          }finally{
+            ожидают.delete(work);активные.delete(chat.ид);
+            if(!ответ.destroyed&&!ответ.writableEnded)ответ.end();
+          }
+          return;
         }
         if (запрос.method === 'POST' && chat.действие === 'message') {
           const данные = await телоЗапроса(запрос);
