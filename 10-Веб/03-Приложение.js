@@ -213,9 +213,10 @@ function createStreamPainter(article){
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let full='',shown=0,scheduled=false,stopped=false,renderCount=0;
   let lastFrame=0,followBottom=true;
-  function paint(time){
+  function paint(time,force=false){
     scheduled=false;
-    if(stopped||!body.isConnected)return;
+    // Finalize text even if a live chat refresh detached the temporary node.
+    if(stopped||(!body.isConnected&&!force))return;
     // Follow only if the user had not scrolled away before the next render.
     const nearBottom=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<120;
     followBottom=followBottom&&nearBottom;
@@ -248,7 +249,7 @@ function createStreamPainter(article){
     if(stopped)return;
     shown=full.length;
     // Make the final persisted response exact, without delaying the API lifecycle.
-    paint(performance.now());stopped=true;
+    paint(performance.now(),true);stopped=true;
   }
   function cancel(){stopped=true;}
   return {add,finish,cancel,getStats:()=>({received:full.length,displayed:shown,renderCount})};
