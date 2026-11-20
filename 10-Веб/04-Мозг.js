@@ -191,6 +191,7 @@
     const groups=nodes.filter(n=>n.kind==='cluster');
     const chats=nodes.filter(n=>n.kind==='chat');
     const messages=nodes.filter(n=>n.kind==='message');
+    const animateNew=nodes.length<=600&&!motion.matches;
     const byGroup=new Map(groups.map(n=>[n.group,[]]));
     for(const chat of chats)byGroup.get(chat.group)?.push(chat);
     const byChat=new Map(chats.map(n=>[n.chatId,[]]));
@@ -240,14 +241,21 @@
           const a=sector.start+margin+(col+.5)/used*(width-2*margin);
           const r=169+(row+.5)/rows*67;
           msg.tx=Math.cos(a)*r;msg.ty=Math.sin(a)*r;
-          if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
+          if(!Number.isFinite(msg.x)){
+            const parent=chats.find(c=>c.chatId===msg.chatId);
+            msg.x=animateNew?(parent?.tx??msg.tx*.85):msg.tx;
+            msg.y=animateNew?(parent?.ty??msg.ty*.85):msg.ty;
+          }
         });
       }else{
         for(const chat of byGroup.get(sector.group.group)||[]){
           (byChat.get(chat.chatId)||[]).forEach((msg,i)=>{
             const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
             msg.tx=chat.tx+Math.cos(a)*r;msg.ty=chat.ty+Math.sin(a)*r;
-            if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
+            if(!Number.isFinite(msg.x)){
+              msg.x=animateNew?chat.tx:msg.tx;
+              msg.y=animateNew?chat.ty:msg.ty;
+            }
           });
         }
       }
