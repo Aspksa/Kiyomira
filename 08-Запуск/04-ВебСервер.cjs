@@ -222,6 +222,8 @@ if (require.main === module) {
       остановка = true;
       void app.close().then(() => { console.log('[Kiyomira] Веб-сервер остановлен'); if (process.connected) process.disconnect(); process.exit(0); }).catch(() => { if (process.connected) process.disconnect(); process.exit(1); });
     };
+    // A browser-initiated /api/quit closes the server directly; that must also stop the child process.
+    app.server.once('close',stop);
     process.on('SIGINT',stop);
     process.on('SIGTERM',stop);
     process.on('message',x=>{ if (x?.type === 'shutdown') stop(); });
