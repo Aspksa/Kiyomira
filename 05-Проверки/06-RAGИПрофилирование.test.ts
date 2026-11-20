@@ -301,3 +301,58 @@ test('Отношения остаются непроверенными в SQLite
     assert.deepEqual(memory.поискСмысловыхОтношений('связи Kiyomira SQLite'),[]);
   }finally{memory.закрыть();}
 });
+
+
+test('Производные индексы и типы отношений не переписывают исходные сообщения',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Память');
+    memory.добавитьПару('Проект: Kiyomira\nПроект Kiyomira использует SQLite',
+      'Принято',chat);
+    const source=memory.сообщенияДиалога(chat).find(x=>x.роль==='пользователь');
+    assert.ok(source);
+    const indexed=memory.поискСмысловыхОтношений('связи Kiyomira SQLite');
+    assert.equal(indexed[0].статус,'кандидат');
+    assert.ok(memory.сообщениеПоИд(indexed[0].источники[0]));
+    const graph=memory.картаСущностей();
+    assert.ok(graph.производныеСущности.some(x=>x.название==='Kiyomira'));
+    assert.ok(memory.проверитьЦелостностьПамяти().sqlite);
+    assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+    memory.удалитьДиалог(chat);
+    assert.deepEqual(memory.поискСмысловыхОтношений('связи Kiyomira SQLite'),[]);
+    assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+  }finally{memory.закрыть();}
+});
+
+test('Фоновая очередь памяти восстанавливает курсор после перезапуска SQLite',async()=>{
+  const {mkdtempSync,rmSync}=await import('node:fs');
+  const {tmpdir}=await import('node:os');
+  const {join}=await import('node:path');
+  const {DatabaseSync}=await import('node:sqlite');
+  const folder=mkdtempSync(join(tmpdir(),'kiyomira-memory-index-'));
+  const path=join(folder,'memory.sqlite');
+  try{
+    // Legacy message input without background index entries, as in an upgrade.
+    const memory=new ПамятьДиалога(50,path);
+    const chat=memory.создатьДиалог('Старые сообщения');
+    memory.закрыть();
+    const db=new DatabaseSync(path);
+    db.prepare("INSERT INTO сообщения(роль,текст,диалог_ид) VALUES('пользователь',?,?)")
+      .run('Проект Kiyomira использует SQLite',chat);
+    db.prepare("INSERT INTO сообщения(роль,текст,диалог_ид) VALUES('пользователь',?,?)")
+      .run('Документ manual.md относится к проекту Kiyomira',chat);
+    db.close();
+    const first=new ПамятьДиалога(50,path);
+    assert.equal(first.состояниеФоновойПамяти().ожидает,2);
+    assert.equal(first.обработатьФоновуюПамять(1).обработано,1);
+    assert.equal(first.состояниеФоновойПамяти().ожидает,1);
+    first.закрыть();
+    const second=new ПамятьДиалога(50,path);
+    assert.equal(second.состояниеФоновойПамяти().ожидает,1);
+    assert.equal(second.обработатьФоновуюПамять(2).обработано,1);
+    assert.equal(second.состояниеФоновойПамяти().ожидает,0);
+    assert.equal(second.поискСмысловыхОтношений('связи Kiyomira SQLite').length>0,true);
+    assert.equal(second.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+    second.закрыть();
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
