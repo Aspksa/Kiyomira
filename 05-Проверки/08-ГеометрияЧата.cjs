@@ -157,19 +157,19 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         unit.signal('recall',[99999999]); // Unknown SQLite id must create no phantom trail.
         const empty=unit.getStats();
         const styles=getComputedStyle(layer);
-        return {sent,error,empty,
+        return {sent,errorState:error,empty,
           layerPointerEvents:styles.pointerEvents,
           layerDisplay:styles.display,
           reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
           activeClass:host.classList.contains('comet-layer-enabled')};
       })()`);
-      assert.ok(!comets.error,JSON.stringify(comets));
+      assert.ok(!comets.failure,JSON.stringify(comets));
       assert.equal(comets.layerPointerEvents,'none','effect layer must not intercept chat or zoom clicks');
       assert.equal(comets.activeClass,true,'comet layer should activate only with Canvas context');
       if(width>=701&&!comets.reducedMotion){
         assert.ok(comets.sent.activeEffects>=1,'a real user submit needs a visible comet');
-        assert.equal(comets.error.kind,'error','errors must never be animated as success');
-        assert.equal(comets.empty.activeEffects,comets.error.activeEffects,'unknown SQLite source must not invent trail');
+        assert.equal(comets.errorState.kind,'error','errors must never be animated as success');
+        assert.equal(comets.empty.activeEffects,comets.errorState.activeEffects,'unknown SQLite source must not invent trail');
       }else assert.equal(comets.layerDisplay,'none','comet overlay should not obstruct mobile UI');
 
       const unity=await evaluate(`(()=>{
