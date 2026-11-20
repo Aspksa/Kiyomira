@@ -25,7 +25,7 @@ export class ОблачнаяМодель implements ПровайдерМоде�
     return (данные.data ?? []).map(модель => модель.id);
   }
 
-  async создатьОтвет(история: readonly Сообщение[]): Promise<string> {
+  async создатьОтвет(история: readonly Сообщение[], сигнал?: AbortSignal): Promise<string> {
     const ответ = await this.запрос(`${this.адрес}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.ключ}`, 'Content-Type': 'application/json' },
@@ -37,7 +37,7 @@ export class ОблачнаяМодель implements ПровайдерМоде�
           content: сообщение.текст
         }))
       }),
-      signal: AbortSignal.timeout(60000)
+      signal: сигнал ? AbortSignal.any([сигнал, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
     });
     if (!ответ.ok) throw new Error(`Cloud.ru: запрос отклонён (HTTP ${ответ.status})`);
     const данные = await ответ.json() as ОтветAPI;
