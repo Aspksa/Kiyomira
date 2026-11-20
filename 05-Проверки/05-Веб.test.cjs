@@ -50,6 +50,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
     assert.match(appSource,/KiyomiraLayout/);
+    assert.match(appSource,/createStreamPainter/);
+    assert.match(appSource,/requestAnimationFrame\(paint\)/);
     assert.match(appSource,/initCognitiveFlow/);
     assert.match(appSource,/indexDocument/);
     assert.match(appSource,/jumpToMessage/);
@@ -74,6 +76,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(css,/Compact visualization controls/);
     assert.match(css,/--chat-percent/);
     assert.match(css,/workspace-divider/);
+    assert.match(css,/Kiyomira 7/);
+    assert.match(css,/kiyomira-message-enter/);
 
     const imported=await request('/api/memory/documents','POST',{
       title:'architecture.md',project:'Kiyomira',text:'# Архитектура\nSQLite и Canvas'
@@ -323,6 +327,8 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   assert.match(elements.get('brain-count').textContent,/3 сообщений/);
   assert.match(source,/Weighted stable radial sectors/);
   assert.match(source,/sectorAngles/);
+  assert.match(source,/memoryWaveIds/);
+  assert.match(source,/Outer TRACKTOR categorical rim/);
   // Many persisted messages may fill one sector without leaking outside the ring.
   const denseGraph={
     chats:[{id:2,title:'Проекты',count:120}],
@@ -342,6 +348,7 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   assert.doesNotThrow(()=>window.KiyomiraBrain.eventActivity({
     type:'контекст',chatId:1,sources:[101,103]
   }));
+  assert.match(elements.get('brain-live').textContent,/ЧТЕНИЕ КОНТЕКСТА/);
   assert.doesNotThrow(()=>window.KiyomiraBrain.setPhase('request'));
   // Draw several actual Canvas frames, including active graph edges.
   for(let i=0;i<7;i++){
