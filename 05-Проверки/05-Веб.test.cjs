@@ -92,6 +92,17 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(events.data.events.some(e=>e.type==='ответ'&&e.chatId===a),true);
     assert.equal(events.data.events.some(e=>e.type==='генерация'&&e.chatId===a),true);
     assert.equal((await request('/api/brain/events?after='+events.data.latest)).data.events.length,0);
+    const streamed=await fetch(url('/api/chats/'+b+'/message-stream'),{
+      method:'POST',
+      headers:{Cookie:cookie,'X-Kiyomira-Request':'1','Content-Type':'application/json'},
+      body:JSON.stringify({text:'Проверка потокового ответа'})
+    });
+    assert.equal(streamed.status,200);
+    assert.match(streamed.headers.get('content-type'),/application\/x-ndjson/);
+    const streamPackets=(await streamed.text()).trim().split('\n').map(JSON.parse);
+    assert.equal(streamPackets.some(x=>x.type==='chunk'),true);
+    assert.equal(streamPackets.at(-1).type,'done');
+    assert.equal((await request('/api/chats/'+b)).data.messages.length,2);
     const history=await request('/api/chats/'+a);
     assert.deepEqual(history.data.messages.map(x=>x.роль),['пользователь','ассистент']);
     assert.equal((await request('/api/chats/'+b)).data.messages.length,0);
