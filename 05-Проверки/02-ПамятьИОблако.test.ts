@@ -233,3 +233,41 @@ test('10k SQLite messages can be scanned without expanding the browser payload',
     assert.ok(elapsed<10000,'10k SQLite scan exceeded 10 seconds: '+elapsed);
   }finally{memory.закрыть();}
 });
+
+
+test('opt-in embedding adapter and SQLite vector cache work without live Cloud.ru calls',async()=>{
+  const {CloudEmbeddings,МОДЕЛЬ_ЭМБЕДДИНГОВ}=await import('../04-Модели/04-Эмбеддинги.ts');
+  let calls=0;
+  const fake:typeof fetch=async(_url,init)=>{
+    calls++;
+    const payload=JSON.parse(String(init?.body));
+    assert.equal(payload.model,МОДЕЛЬ_ЭМБЕДДИНГОВ);
+    assert.equal(payload.input.length,1);
+    return new Response(JSON.stringify({
+      data:[{index:0,embedding:Array.from({length:32},(_,i)=>i===0?1:0)}]
+    }),{status:200,headers:{'Content-Type':'application/json'}});
+  };
+  const adapter=new CloudEmbeddings('test-api-key',fake);
+  const [vector]=await adapter.векторизовать(['Пример для теста']);
+  assert.equal(calls,1);
+  assert.equal(vector.length,32);
+  const memory=new ПамятьДиалога(20);
+  try{
+    const chat=memory.создатьДиалог('Semantic');
+    memory.добавитьПару('Моя память находится в SQLite','Принято',chat);
+    const toIndex=memory.кандидатыВекторизации(МОДЕЛЬ_ЭМБЕДДИНГОВ,8);
+    assert.equal(toIndex.length,1);
+    assert.equal(memory.записатьВекторы(МОДЕЛЬ_ЭМБЕДДИНГОВ,
+      [{...toIndex[0],вектор:vector}]),1);
+    assert.equal(memory.кандидатыВекторизации(МОДЕЛЬ_ЭМБЕДДИНГОВ).length,0);
+    assert.equal(memory.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ).индексировано,1);
+    const results=memory.поискПоВекторам(МОДЕЛЬ_ЭМБЕДДИНГОВ,vector,5);
+    assert.equal(results.length,1);
+    assert.equal(results[0].ид,toIndex[0].ид);
+    assert.ok(results[0].балл>.99);
+    assert.throws(()=>memory.записатьВекторы(МОДЕЛЬ_ЭМБЕДДИНГОВ,
+      [{ид:toIndex[0].ид,текст:'Подменённый источник',вектор:vector}]),/не совпадает/);
+    memory.удалитьДиалог(chat);
+    assert.equal(memory.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ).индексировано,0);
+  }finally{memory.закрыть();}
+});
