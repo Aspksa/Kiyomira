@@ -20,6 +20,8 @@
   let totalMessages=0,conflicts=[],factConflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   let cameraTarget=null,hovered=null,sectorAngles=[];
   let memoryWaveAt=0,memoryWaveIds=new Set();
+  let sourceRouteEdges=new Set(),routeUntil=0;
+  let renderStep=25,measuredFrames=0,lastDrawCost=0;
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -147,7 +149,7 @@
     for(const m of rows){
       const chatIndex=chatPositions.get(m.chatId);if(chatIndex===undefined)continue;
       const idx=fresh.length,old=previous.get('m'+m.id);
-      fresh.push({id:'m'+m.id,messageId:m.id,chatId:m.chatId,kind:'message',label:String(m.preview||''),role:m.role,group:fresh[chatIndex].group,x:old?.x,y:old?.y});
+      fresh.push({id:'m'+m.id,messageId:m.id,chatId:m.chatId,kind:'message',label:String(m.preview||''),role:m.role,at:m.at,group:fresh[chatIndex].group,x:old?.x,y:old?.y});
       links.push([chatIndex,idx]);
     }
     // Candidate facts are backed by explicit user statements and provenance.
@@ -296,7 +298,7 @@
       fact.tx=source.tx+Math.cos(a)*7;fact.ty=source.ty+Math.sin(a)*7;
       if(!Number.isFinite(fact.x)){fact.x=fact.tx;fact.y=fact.ty;}
     }
-    if(mode!=='circle'){
+    if(mode==='honeycomb'||mode==='links'){
       for(let k=0;k<5;k++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
         const left=groups[i],right=groups[j],dx=left.tx-right.tx,dy=left.ty-right.ty;
         const d=Math.hypot(dx,dy)||.01,limit=mode==='honeycomb'?156:68;
@@ -304,10 +306,28 @@
           right.tx-=dx/d*amount;right.ty-=dy/d*amount;}
       }
     }
+    if(mode==='timeline'){
+      // ID order is the actual SQLite insertion chronology, independent of locale parsing.
+      const chronological=messages.slice().sort((a,b)=>a.messageId-b.messageId);
+      const topicCount=Math.max(1,groups.length);
+      groups.forEach((group,i)=>{group.tx=-268;group.ty=(i-(topicCount-1)/2)*40;});
+      chats.forEach((chat,i)=>{const parent=groups[chat.group];
+        chat.tx=-222;chat.ty=(parent?.ty||0)+(i%3-1)*7;});
+      chronological.forEach((msg,i)=>{
+        msg.tx=-185+(i+.5)/Math.max(1,chronological.length)*430;
+        msg.ty=groups[msg.group]?.ty||0;
+      });
+      projectNodes.forEach((project,i)=>{project.tx=257;project.ty=(i-projectNodes.length/2)*19;});
+      documentNodes.forEach((doc,i)=>{doc.tx=285;doc.ty=(i-documentNodes.length/2)*11;});
+      for(const fact of nodes.filter(n=>n.kind==='fact')){
+        const origin=msgIndex.get(fact.sourceId);
+        if(origin){fact.tx=origin.tx;fact.ty=origin.ty-9;}
+      }
+    }
     request();
   }
   function setMode(next) {
-    if(!['circle','honeycomb','links'].includes(next))return;
+    if(!['circle','honeycomb','links','timeline'].includes(next))return;
     mode=next;
     document.querySelectorAll('[data-brain-mode]').forEach(button=>{
       const on=button.dataset.brainMode===mode;
@@ -558,7 +578,7 @@
   });
   try {
     const saved=JSON.parse(localStorage.getItem('kiyomira.brain.camera')||'{}');
-    if(['circle','honeycomb','links'].includes(saved.mode))mode=saved.mode;
+    if(['circle','honeycomb','links','timeline'].includes(saved.mode))mode=saved.mode;
     if(Number.isFinite(saved.zoom))zoom=clamp(saved.zoom,.4,3.5);
     if(Number.isFinite(saved.x))pan.x=clamp(saved.x,-1200,1200);
     if(Number.isFinite(saved.y))pan.y=clamp(saved.y,-1200,1200);
