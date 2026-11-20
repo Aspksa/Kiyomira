@@ -101,14 +101,14 @@
       })));
     const signature=categories.map(c=>c.id).join('|');
     if(signature!==categorySignature){categorySignature=signature;categoryGrowthAt=now();}
-    const ringCount=categories.length,outerCount=Math.max(0,ringCount-12);
-    categoryRadius=334+Math.max(0,Math.min(4,ringCount-8))*8+(outerCount?42*Math.ceil(outerCount/12):0);
+    const ringCount=categories.length,expansion=Math.max(0,Math.min(4,ringCount-8))*8;
+    const ringTotal=Math.max(1,Math.ceil(ringCount/12));
+    categoryRadius=334+expansion+42*(ringTotal-1);
     categoryRings=categories.map((c,i)=>{
-      const outer=ringCount>12&&i>=12;
-      const slot=outer?i-12:i,slots=outer?ringCount-12:Math.min(ringCount,12);
-      const radius=334+Math.max(0,Math.min(4,ringCount-8))*8+(outer?42:0);
+      const ring=Math.floor(i/12),slot=i%12;
+      const slots=Math.min(12,ringCount-ring*12),radius=334+expansion+42*ring;
       const angle=-Math.PI/2+(slot+.5)*TAU/Math.max(1,slots);
-      return {...c,ring:outer?2:1,angle,radius,x:Math.cos(angle)*radius,y:Math.sin(angle)*radius};
+      return {...c,ring:ring+1,angle,radius,x:Math.cos(angle)*radius,y:Math.sin(angle)*radius};
     });
     // The graph is immutable between actual SQLite revisions. Avoid rebuilding
     // every sector and all Canvas nodes for unchanged polling snapshots.
@@ -836,7 +836,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {categoryCount:categoryRings.length,categoryRings:categoryRings.length>12?2:1,categoryRadius,fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
+    getViewportStats(){return {categoryCount:categoryRings.length,categoryRings:Math.max(1,Math.ceil(categoryRings.length/12)),categoryRadius,fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
