@@ -100,12 +100,18 @@ function renderChats() {
     root.append(btn);
   }
 }
+let brainFetchInFlight=null;
 async function refreshBrain() {
-  try {
-    const snapshot=await api('/api/brain');
-    window.KiyomiraBrain?.update(snapshot);
-    if(!state.brainInitialized){state.brainEventId=snapshot.latest||0;state.brainInitialized=true;}
-  } catch(err) { console.warn('Карта памяти: '+err.message); }
+  if(brainFetchInFlight)return brainFetchInFlight;
+  brainFetchInFlight=(async()=>{
+    try {
+      const snapshot=await api('/api/brain');
+      window.KiyomiraBrain?.update(snapshot);
+      if(!state.brainInitialized){state.brainEventId=snapshot.latest||0;state.brainInitialized=true;}
+    } catch(err) { console.warn('Карта памяти: '+err.message); }
+    finally {brainFetchInFlight=null;}
+  })();
+  return brainFetchInFlight;
 }
 async function pollBrainEvents() {
   if(!state.brainInitialized||document.hidden)return;
