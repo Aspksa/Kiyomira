@@ -13,7 +13,6 @@
 <body>
 <div class="layout">
   <nav class="rail" aria-label="Главное меню">
-    <div class="rail-logo" aria-label="Kiyomira">狐</div>
     <div class="rail-group">
       <button type="button" id="nav-chat" class="active" data-tip="Диалоги" aria-label="Диалоги" title="Диалоги"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg></button>
       <button type="button" id="nav-search" data-tip="Поиск" aria-label="Поиск по истории" title="Поиск"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m15.7 15.7 5.2 5.2"/></svg></button>
@@ -75,7 +74,7 @@
             <span class="composer-tip">Enter — отправить · Shift+Enter — новая строка</span>
             <div class="composer-actions">
               <button type="button" id="stop-response" class="secondary" hidden>Остановить</button>
-              <button type="submit" id="send" class="primary">Отправить ↗</button>
+              <button type="submit" id="send" class="primary send-compact" aria-label="Отправить сообщение" title="Отправить сообщение"><span aria-hidden="true">↗</span></button>
             </div>
           </div>
         </form>
