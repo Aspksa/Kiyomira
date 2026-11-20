@@ -461,3 +461,82 @@ html,body{height:100%;overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .unified-workspace{transition:none}
 }
+
+/* Kiyomira 7 · TRACKTOR Neural: unified blue-black/cyan/copper UI, source-backed motion. */
+.unified-workspace{
+  background:
+    radial-gradient(ellipse 58% 78% at 31% 52%,rgba(39,132,147,.075),transparent 70%),
+    radial-gradient(ellipse 30% 54% at 78% 65%,rgba(207,142,82,.034),transparent 80%),
+    #02070b;
+  --cognitive-activity:#72cfc0;
+}
+.unified-workspace > .brain-panel,
+.unified-workspace > .chat-view{background:transparent}
+.unified-workspace .brain-head .section-kicker,
+.unified-workspace .conversation-head .section-kicker{
+  color:#78afbc;letter-spacing:.15em;
+}
+.unified-workspace .brain-head h1,
+.unified-workspace .conversation-head h1{color:#c5d9d8;letter-spacing:.03em}
+.unified-workspace .brain-controls{background:rgba(5,19,27,.30)}
+.unified-workspace .brain-controls button{
+  transition:color .16s ease,border-color .16s ease,background .16s ease;
+}
+.unified-workspace .brain-controls button:hover,
+.unified-workspace .brain-controls button.selected{
+  color:#b7efe1;border-color:rgba(89,192,177,.52);
+  background:rgba(30,106,113,.12);
+}
+.unified-workspace .brain-live.running{
+  color:#a0edd9;
+  box-shadow:0 0 0 1px rgba(84,185,174,.12),0 0 22px rgba(71,170,159,.14);
+}
+.unified-workspace .workspace-divider::after{background:rgba(90,169,164,.14)}
+.unified-workspace .workspace-divider:hover::after,
+.unified-workspace .workspace-divider:focus-visible::after{background:rgba(109,213,197,.78)}
+.unified-workspace .messages{scroll-behavior:smooth;overscroll-behavior:contain}
+.unified-workspace .message{
+  animation:kiyomira-message-enter .24s ease-out both;
+  transform-origin:100% 100%;
+}
+.unified-workspace .message.assistant{transform-origin:0 100%}
+@keyframes kiyomira-message-enter{
+  from{opacity:.4;transform:translateY(5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.unified-workspace .message.assistant .message-label{color:#7fc2b7}
+.unified-workspace .message.user .message-label{color:#d6ae7c}
+.unified-workspace .composer-wrap{
+  flex:0 0 auto;z-index:4;min-height:0;
+  background:linear-gradient(to top,rgba(2,7,11,.98),rgba(2,7,11,.65) 70%,transparent);
+}
+.unified-workspace .composer{
+  border:1px solid rgba(102,163,163,.28);
+  background:rgba(7,16,23,.86);
+  box-shadow:0 8px 40px rgba(0,0,0,.2);
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+.unified-workspace .composer:focus-within{
+  border-color:rgba(111,211,189,.63);
+  box-shadow:0 0 0 1px rgba(111,211,189,.10),0 0 28px rgba(50,160,145,.095);
+}
+.unified-workspace #send{
+  flex:0 0 36px;min-width:36px;min-height:36px;max-height:36px;
+  border-color:#b8915e;background:#b8915e;color:#070d11;
+  transition:filter .16s ease,transform .16s ease,background .16s ease;
+}
+.unified-workspace #send:hover:not(:disabled){filter:brightness(1.14);transform:translateY(-1px)}
+.unified-workspace #send:active:not(:disabled){transform:translateY(0)}
+.unified-workspace .message-sources{border-color:rgba(101,190,170,.3)}
+.unified-workspace .message.source-active{outline-color:#75c7b8}
+.unified-workspace .cognitive-flow .flow-path{stroke:rgba(86,187,179,.23)}
+.unified-workspace .cognitive-flow .flow-pulse{stroke:#83dec9}
+@media(max-width:700px){
+  .unified-workspace .composer-wrap{padding-bottom:max(6px,env(safe-area-inset-bottom))}
+  .unified-workspace #send{flex-basis:36px}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{animation:none}
+  .unified-workspace .messages{scroll-behavior:auto}
+  .unified-workspace #send{transition:none}
+}
