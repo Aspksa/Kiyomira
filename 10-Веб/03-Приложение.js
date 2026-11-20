@@ -217,28 +217,50 @@ async function streamReply(chatId,text,onChunk) {
 // model tokens; only text received from the actual Cloud.ru stream is rendered.
 function createStreamPainter(article){
   const body=article.querySelector('.message-body');
-  let full='',scheduled=false,stopped=false;
-  function paint(){
+  const scroller=el('messages');
+  const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+  let full='',shown=0,scheduled=false,stopped=false,renderCount=0;
+  let lastFrame=0,followBottom=true;
+  function paint(time){
     scheduled=false;
     if(stopped||!body.isConnected)return;
-    body.innerHTML=markdown(full);
-    const scroller=el('messages');
-    const remaining=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight;
-    if(remaining<180)scroller.scrollTop=scroller.scrollHeight;
+    // Follow only if the user had not scrolled away before the next render.
+    const nearBottom=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<120;
+    followBottom=followBottom&&nearBottom;
+    if(reduceMotion.matches)shown=full.length;
+    else {
+      const dt=Math.min(0.08,Math.max(.016,((time||performance.now())-lastFrame)/1000||.016));
+      const missing=full.length-shown;
+      // Mizuyori-inspired smooth catch-up: never invent text, accelerate if behind.
+      const count=Math.max(1,Math.ceil((100+missing*3)*dt));
+      shown=Math.min(full.length,shown+count);
+      if(shown<full.length){
+        const end=full.indexOf(' ',shown);
+        if(end>=0&&end-shown<=18)shown=end+1;
+      }
+    }
+    lastFrame=time||performance.now();
+    body.innerHTML=markdown(full.slice(0,shown));
+    renderCount++;
+    if(followBottom)scroller.scrollTop=scroller.scrollHeight;
+    if(shown<full.length)schedule();
+  }
+  function schedule(){
+    if(!scheduled&&!stopped){scheduled=true;requestAnimationFrame(paint);}
   }
   function add(part){
-    if(stopped)return;
-    full+=part;
-    if(!scheduled){scheduled=true;requestAnimationFrame(paint);}
+    if(stopped||!part)return;
+    full+=part;schedule();
   }
   function finish(){
     if(stopped)return;
-    paint();stopped=true;
+    shown=full.length;
+    // Make the final persisted response exact, without delaying the API lifecycle.
+    paint(performance.now());stopped=true;
   }
   function cancel(){stopped=true;}
-  return {add,finish,cancel};
+  return {add,finish,cancel,getStats:()=>({received:full.length,displayed:shown,renderCount})};
 }
-
 async function sendMessage(ev) {
   ev.preventDefault();
   if(state.busy || !state.selected)return;
@@ -267,6 +289,7 @@ async function sendMessage(ev) {
     await refreshChats();
   } catch(err) {
     window.KiyomiraBrain?.setPhase('error');
+    window.KiyomiraUnity?.signal('error');
     temp.remove();
     el('messages').querySelectorAll('[data-temporary="1"]').forEach(node=>node.remove());
     input.value=text;
