@@ -18,7 +18,7 @@ const patterns:{тип:ТипОтношения;pattern:RegExp;swap?:boolean}[]=
 export function извлечьОтношения(текст:string,источник_ид:number,лимит=12):Отношение[]{
   if(!Number.isSafeInteger(источник_ид)||источник_ид<1||typeof текст!=='string')return [];
   const found:Отношение[]=[],seen=new Set<string>();
-  const lines=текст.split(/[.!?\r\n;]+/).slice(0,30);
+  const lines=текст.split(/\.(?=\s|$)|[!?\r\n;]+/).slice(0,30);
   for(const raw of lines){
     const line=normalize(raw).slice(0,240);
     if(!line||negation(line)||/^(?:если|возможно|кажется|предположим|может быть)\b/iu.test(line))continue;
