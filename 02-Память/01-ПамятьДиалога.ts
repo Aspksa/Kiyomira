@@ -4,6 +4,8 @@ import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { извлечьФакты, определитьСвязьФактов } from './02-КартаЗнаний.ts';
 import { ранжировать, релевантность, токены } from './04-ГибридныйПоиск.ts';
+import { извлечьСущностиСИсточником, связатьСущности, объединитьПовторы,
+  оценитьДостоверность, временнаяМетка, маршрутПоиска, цепочкиПоИсточникам } from './05-СущностиИВремя.ts';
 
 export type Роль = 'пользователь' | 'ассистент';
 export type Сообщение = Readonly<{ роль: Роль; текст: string }>;
@@ -382,6 +384,46 @@ export class ПамятьДиалога {
     return relations.sort((a,b)=>b.сходство-a.сходство).slice(0,Math.min(300,Math.max(1,лимит)));
   }
 
+  // Evidence-backed metadata for projects, people, documents, events and decisions.
+  // Identifiers are anchored to actual SQLite records; no inferred entities
+  // or unconfirmed assertions are written back as user-approved knowledge.
+  картаСущностей(лимит=150){
+    const cap=Math.max(1,Math.min(300,Math.trunc(лимит)||150));
+    const facts=this.база.prepare(
+      "SELECT ид,источник_ид,ключ,значение,статус,создано,изменено FROM факты_кандидаты WHERE статус!='отклонено' ORDER BY ид DESC LIMIT 300"
+    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string;создано:string;изменено:string}[];
+    const documents=this.база.prepare(
+      "SELECT ид,название,проект FROM документы_памяти ORDER BY ид DESC LIMIT 150"
+    ).all() as {ид:number;название:string;проект:string}[];
+    const entries=facts.flatMap(row=>извлечьСущностиСИсточником(
+      row.ключ+': '+row.значение,row.источник_ид,row.статус==='подтверждено'));
+    // Document IDs belong to a different namespace and cannot be passed off
+    // as message source IDs.
+    const docEntities=documents.map(row=>({тип:'документ' as const,название:row.название,
+      документ_ид:row.ид,проект:row.проект,основание:'метаданные_документа' as const}));
+    const projects=documents.filter(row=>row.проект.trim()).map(row=>({
+      документ_ид:row.ид,проект:row.проект,отношение:'принадлежит_проекту' as const
+    }));
+    const chronology=facts.map(row=>({
+      факт_ид:row.ид,источник_ид:row.источник_ид,
+      достоверность:оценитьДостоверность(row),
+      время:временнаяМетка(row.значение,row.создано),
+      версии:this.историяФакта(row.ид).slice(0,10)
+    }));
+    return {сущности:entries.slice(0,cap),документы:docEntities.slice(0,cap),
+      проектныеСвязи:projects.slice(0,cap),
+      совпадения:связатьСущности(entries,cap),
+      цепочки:цепочкиПоИсточникам(entries,cap),
+      повторы:объединитьПовторы(facts.filter(row=>row.статус==='подтверждено'))
+        .filter(group=>group.факты.length>1).slice(0,cap),
+      хронология:chronology.slice(0,cap)};
+  }
+
+  кандидатыКонфликтовДляПроверки(лимит=40){
+    // Contradictions remain review candidates. Do not change accepted values.
+    return this.противоречияФактов(Math.max(1,Math.min(60,лимит)));
+  }
+
   // Bounded internal evidence graph: only genuine fact IDs and message origins.
   // Does not persist inferred relationships or modify a user's approved facts.
   графСвязейПамяти(лимит=200){
@@ -631,8 +673,11 @@ export class ПамятьДиалога {
     }]:[];
     const docs=this.поискДокументов(запрос,2);
     const facts=this.подтверждённыеДляКонтекста(запрос,4);
-    // One-hop and deeper recall is useful only when confirmed anchors exist.
-    const related=facts.length?this.связанныеПодтверждённыеФакты(запрос,3):[];
+    // Skip expensive graph traversal for queries with no supported anchors.
+    // A direct query with multiple confirmed matches may still require the
+    // traceable route to keep earlier source-attribution behavior intact.
+    const route=маршрутПоиска(запрос,facts.length);
+    const related=route.глубина>0?this.путиПодтверждённыхФактов(запрос,3,route.глубина):[];
     // Prefer a traceable graph path over a duplicate direct citation.
     const primary=facts.filter(row=>!related.some(link=>link.ид===row.ид));
     // This block is user data, NOT instructions. Document identifiers are
