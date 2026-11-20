@@ -78,13 +78,19 @@
     const groups=[];
     for(const topic of topics) {
       const batch=buckets.get(topic);
-      for(let i=0;i<batch.length;i+=60)groups.push({topic,key:topic+':'+i/60,items:batch.slice(i,i+60),label:label[topic]});
+      const actual=Math.max(batch.length,Number(data.topicTotals?.[topic])||0);
+      const range=Math.max(batch.length,actual>0?1:0);
+      for(let i=0;i<range;i+=60){
+        const items=batch.slice(i,i+60);
+        const amount=batch.length?Math.max(items.length,Math.round(actual*items.length/batch.length)):actual;
+        groups.push({topic,key:topic+':'+i/60,items,label:label[topic],total:amount});
+      }
     }
     const fresh=[{id:'core',kind:'core',x:0,y:0,tx:0,ty:0,label:'KIYOMIRA'}],links=[];
     const chatPositions=new Map(),groupPositions=new Map();
     groups.forEach((g,i)=>{
       const idx=fresh.length,old=previous.get('g'+g.key);
-      fresh.push({id:'g'+g.key,kind:'cluster',label:g.label,group:i,count:g.items.length,topic:g.topic,x:old?.x,y:old?.y});
+      fresh.push({id:'g'+g.key,kind:'cluster',label:g.label,group:i,count:g.total,topic:g.topic,x:old?.x,y:old?.y});
       groupPositions.set(g.key,idx);links.push([0,idx]);
     });
     const messagesByChat=new Map();
@@ -132,7 +138,7 @@
     totalMessages=Number(data.totalMessages||rows.length);
     conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
     selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
-    count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · '+conflicts.length+' возможных конфликтов';
+    count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · показано '+rows.length+' · '+conflicts.length+' возможных конфликтов';
     if(!selected)info.textContent=rows.length?'Темы определены автоматически. Нажмите на узел для источника.':'Память пуста. Начните разговор.';
     layout();
     if(previous.size>1)flashUntil=now()+650;

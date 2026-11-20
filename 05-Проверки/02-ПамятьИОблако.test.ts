@@ -216,3 +216,20 @@ test('Kiyomira 3 memory: plain-language candidates, explicit review and immutabl
     assert.deepEqual(memory.историяФакта(first.ид),[]);
   }finally{memory.закрыть();}
 });
+
+
+test('10k SQLite messages can be scanned without expanding the browser payload',()=>{
+  const memory=new ПамятьДиалога(40);
+  try{
+    const chat=memory.создатьДиалог('Нагрузочная карта');
+    for(let i=0;i<5000;i++)memory.добавитьПару('Вопрос номер '+i,'Ответ номер '+i,chat);
+    const start=performance.now();
+    const snapshot=memory.картаДиалогов(10000);
+    const elapsed=performance.now()-start;
+    assert.equal(snapshot.всегоСообщений,10000);
+    assert.equal(snapshot.сообщения.length,10000);
+    assert.equal(snapshot.сообщения[0].ид>0,true);
+    assert.equal(snapshot.сообщения.at(-1)?.роль,'ассистент');
+    assert.ok(elapsed<10000,'10k SQLite scan exceeded 10 seconds: '+elapsed);
+  }finally{memory.закрыть();}
+});

@@ -190,12 +190,12 @@ export class ПамятьДиалога {
 
   // Read-only, bounded snapshots for the Canvas knowledge graph. Queries are
   // ordered by persisted SQLite message IDs; no fabricated nodes or metadata.
-  картаДиалогов(лимит = 1000): {
+  картаДиалогов(лимит = 10000): {
     диалоги: Диалог[];
     сообщения: (Запись & { диалог_ид: number })[];
     всегоСообщений: number;
   } {
-    const безопасныйЛимит = Math.max(1, Math.min(1000, Math.trunc(лимит) || 1000));
+    const безопасныйЛимит = Math.max(1, Math.min(10000, Math.trunc(лимит) || 10000));
     const диалоги = this.списокДиалогов();
     const сообщения = (this.база.prepare(
       'SELECT ид, диалог_ид, роль, текст, время FROM сообщения WHERE диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT ?'
