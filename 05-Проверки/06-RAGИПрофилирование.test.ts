@@ -67,3 +67,37 @@ test('Поиск по длинному документу имеет огран�
     assert.ok(elapsed<10000,'retrieval should remain bounded on the CI runner: '+elapsed+'ms');
   }finally{memory.закрыть();}
 });
+
+
+test('Внутренний граф различает связи, противоречия и источник',async()=>{
+  const {определитьСвязьФактов}=await import('../02-Память/02-КартаЗнаний.ts');
+  const fact=(ид:number,источник_ид:number,ключ:string,значение:string,статус='подтверждено')=>({ид,источник_ид,ключ,значение,статус});
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(2,2,'стек','SQLite'))?.тип,'повторение');
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(3,3,'стек','PostgreSQL'))?.тип,'противоречие');
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(4,4,'база','SQLite'))?.тип,'общая_тема');
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(5,5,'любимое блюдо','борщ')),null);
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(6,1,'стек','SQLite')),null);
+  assert.equal(определитьСвязьФактов(fact(1,1,'стек','SQLite'),fact(7,7,'стек','SQLite','отклонено')),null);
+});
+
+test('Граф контекста использует только подтверждённые связанные источники',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Граф');
+    memory.добавитьПару('Основная база: SQLite','Принято',chat);
+    memory.добавитьПару('Хранилище: SQLite','Записано',chat);
+    memory.добавитьПару('Основная база: PostgreSQL','Учту',chat);
+    const facts=memory.кандидатыФактов(20);
+    const sqlite=facts.filter((f:any)=>f.значение==='sqlite');
+    assert.equal(sqlite.length,2);
+    for(const fact of sqlite)memory.изменитьФакт(fact.ид,'подтверждено');
+    const conflict=facts.find((f:any)=>f.значение==='postgresql');
+    assert.ok(conflict);memory.изменитьФакт(conflict.ид,'подтверждено');
+    assert.ok(memory.графСвязейПамяти().some(link=>link.тип==='противоречие'));
+    assert.ok(!memory.подтверждённыеДляКонтекста('основная база').some(f=>f.ключ==='основная база'));
+    const related=memory.связанныеПодтверждённыеФакты('хранилище sqlite');
+    assert.ok(!related.some(f=>f.ключ==='основная база'));
+    const context=memory.контекстПоЗапросу('хранилище sqlite',chat);
+    assert.ok(context.история.some(row=>row.текст.includes('Подтверждённый факт')));
+  }finally{memory.закрыть();}
+});
