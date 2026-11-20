@@ -185,3 +185,34 @@ test('local ranked retrieval: exact sources, false positives and reusable contex
     assert.equal(memory.кандидатыФактов().length,0);
   }finally{memory.закрыть();}
 });
+
+
+test('Kiyomira 3 memory: plain-language candidates, explicit review and immutable timeline',async()=>{
+  const {извлечьФакты}=await import('../02-Память/02-КартаЗнаний.ts');
+  assert.equal(извлечьФакты('Я предпочитаю тёмную тему').some(x=>x.ключ==='предпочтение'),true);
+  assert.equal(извлечьФакты('Я решил использовать SQLite').some(x=>x.ключ==='решение'),true);
+  assert.deepEqual(извлечьФакты('Случайная беседа без утверждения'),[]);
+  const memory=new ПамятьДиалога(100);
+  try{
+    const chat=memory.создатьДиалог('Факты v3');
+    memory.добавитьПару('Я предпочитаю тёмную тему','Принято',chat);
+    memory.добавитьПару('Я предпочитаю светлую тему','Принято',chat);
+    const facts=memory.кандидатыФактов() as {ид:number;ключ:string;статус:string;источник_ид:number;значение:string}[];
+    assert.equal(facts.length,2);
+    assert.ok(facts.every(f=>f.источник_ид>0&&f.статус==='требует проверки'));
+    assert.ok(memory.противоречияФактов().length>=1);
+    const first=facts[0];
+    memory.изменитьФакт(first.ид,'подтверждено');
+    memory.изменитьФакт(first.ид,'требует проверки','исправленное предпочтение');
+    const history=memory.историяФакта(first.ид) as {действие:string;статус:string;значение:string}[];
+    assert.ok(history.length>=3);
+    assert.equal(history[0].действие,'исправление');
+    assert.equal(history[1].статус,'подтверждено');
+    assert.ok(history.some(x=>x.действие==='извлечение'));
+    memory.изменитьФакт(first.ид,'отклонено');
+    assert.equal((memory.кандидатыФактов() as {ид:number;статус:string}[]).find(x=>x.ид===first.ид)?.статус,'отклонено');
+    assert.equal(memory.противоречияФактов().length,0);
+    memory.удалитьДиалог(chat);
+    assert.deepEqual(memory.историяФакта(first.ид),[]);
+  }finally{memory.закрыть();}
+});
