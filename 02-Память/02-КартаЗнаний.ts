@@ -44,3 +44,31 @@ export function кандидатыПротиворечий(записи:Граф
   }
   return result;
 }
+
+// Rule-based extraction of *candidate* facts from plain-language user statements.
+// No autonomous claim is trusted. Every candidate retains its original message ID.
+export function извлечьФакты(текст:string):Утверждение[]{
+  const candidates:Утверждение[]=[];
+  const seen=new Set<string>();
+  for(const raw of текст.split(/[\r\n.!?]+/).slice(0,12)){
+    const line=raw.trim().slice(0,220);
+    if(line.length<6)continue;
+    const explicit=явноеУтверждение(line);
+    if(explicit)candidates.push(explicit);
+    const patterns:[RegExp,string][]=[
+      [/^я\s+(?:решил[а]?|выбрал[а]?|утвердил[а]?)\s+(.{4,130})$/iu,'решение'],
+      [/^я\s+(?:предпочитаю|люблю)\s+(.{4,130})$/iu,'предпочтение'],
+      [/^(?:мой|наш)\s+проект\s+(?:называется|это)\s+(.{2,90})$/iu,'название проекта'],
+      [/^(?:мы\s+)?(?:используем|использую)\s+(.{4,130})$/iu,'используемое'],
+      [/^мне\s+нравится\s+(.{4,130})$/iu,'предпочтение']
+    ];
+    for(const [re,key] of patterns){
+      const match=line.match(re);
+      if(match)candidates.push({ключ:key,значение:match[1].trim().toLocaleLowerCase('ru'),отрицание:false});
+    }
+  }
+  return candidates.filter(item=>{
+    const key=item.ключ+'|'+item.значение;
+    if(seen.has(key))return false;seen.add(key);return true;
+  }).slice(0,8);
+}
