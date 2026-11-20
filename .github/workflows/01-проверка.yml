@@ -16,7 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
-      - name: TypeScript and SQLite unit tests
+      - name: Validate browser and launcher JavaScript
+        run: npm run check-web
+      - name: TypeScript, web API and SQLite unit tests
         run: npm test
       - name: Run self-check
         run: npm run preflight
@@ -41,7 +43,7 @@ jobs:
           foreach ($file in 'Kiyomira.bat','Kiyomira.ps1','Kiyomira.cjs','package.json') {
             Copy-Item -LiteralPath (Join-Path $source $file) -Destination $folder
           }
-          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','08-Запуск') {
+          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','05-Проверки','08-Запуск','10-Веб') {
             Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $folder -Recurse
           }
           $tokens = $null
@@ -57,6 +59,8 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $nodeDir 'проверка-файлов.json'),$manifest,(New-Object Text.UTF8Encoding($false)))
           $env:KIYOMIRA_OFFLINE='1'
           $env:KIYOMIRA_SKIP_PYTHON='1'
+          $env:KIYOMIRA_MODE='cli'
+          $env:KIYOMIRA_NO_BROWSER='1'
           Push-Location $folder
           try {
             '/exit' | & '.\Kiyomira.bat'
@@ -68,6 +72,9 @@ jobs:
             # A second launch must work offline.
             '/exit' | & '.\Kiyomira.bat'
             if ($LASTEXITCODE -ne 0) { throw 'Offline relaunch failed' }
+            Remove-Item Env:KIYOMIRA_MODE -ErrorAction SilentlyContinue
+            & node (Join-Path $source '05-Проверки/06-ВебBAT.cjs') $folder
+            if ($LASTEXITCODE -ne 0) { throw 'Windows BAT web smoke test failed' }
           } finally { Pop-Location }
           $longBase = Join-Path $env:RUNNER_TEMP ('Д' * 110)
           $longFolder = Join-Path $longBase ('П' * 106)
