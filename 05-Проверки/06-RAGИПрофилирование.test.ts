@@ -146,3 +146,68 @@ test('Обход не проходит через конфликтующие и�
     assert.equal(memory.путиПодтверждённыхФактов('совсем неизвестный текст',4,2).length,0);
   }finally{memory.закрыть();}
 });
+
+
+test('Быстрый поиск после добавления и удаления сообщений не отдаёт устаревший кэш',()=>{
+  const memory=new ПамятьДиалога(70);
+  try{
+    const chat=memory.создатьДиалог('Индексация');
+    memory.добавитьПару('Система использует уникальный индекс алмазавр','Записано',chat);
+    const first=memory.поискГибридный('алмазавр',10);
+    assert.ok(first.length>0);
+    assert.equal(memory.поискГибридный('алмазавр',10)[0].ид,first[0].ид);
+    memory.добавитьПару('Алмазавр и хранение проверенных записей','Принято',chat);
+    assert.ok(memory.поискГибридный('алмазавр',10).length>=2);
+    memory.удалитьДиалог(chat);
+    assert.equal(memory.поискГибридный('алмазавр',10).length,0);
+    const profile=memory.профильПоиска();
+    assert.ok(profile.messageSearch?.samples>=2);
+    assert.ok(profile.messageCache?.samples>=1);
+  }finally{memory.закрыть();}
+});
+
+test('Кэш документов обновляется при добавлении и удалении, без потери источника',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const a=memory.индексироватьДокумент('Файл 1','Уникальная память ревизионов и проверка источника','Kiyomira');
+    assert.equal(memory.поискДокументов('ревизионов')[0].ид,a.id);
+    assert.equal(memory.поискДокументов('ревизионов')[0].ид,a.id);
+    const b=memory.индексироватьДокумент('Файл 2','Ревизионов память в новом документе','Kiyomira');
+    assert.ok(memory.поискДокументов('ревизионов').some(x=>x.ид===b.id));
+    memory.удалитьДокумент(a.id);
+    assert.ok(!memory.поискДокументов('ревизионов').some(x=>x.ид===a.id));
+    assert.ok(memory.профильПоиска().documentCache?.samples>=1);
+  }finally{memory.закрыть();}
+});
+
+test('Кэш подтверждённого графа сбрасывается после проверки и конфликта',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Обход');
+    memory.добавитьПару('Стек: SQLite','ОК',chat);
+    memory.добавитьПару('Хранилище: SQLite','ОК',chat);
+    const f=memory.кандидатыФактов(10);
+    for(const x of f)memory.изменитьФакт(x.ид,'подтверждено');
+    assert.ok(memory.путиПодтверждённыхФактов('стек SQLite',4,2).length>=1);
+    assert.ok(memory.путиПодтверждённыхФактов('стек SQLite',4,2).length>=1);
+    memory.добавитьПару('Хранилище: PostgreSQL','ОК',chat);
+    const conflict=memory.кандидатыФактов(10).find((x:any)=>x.значение==='postgresql');
+    assert.ok(conflict);
+    memory.изменитьФакт(conflict.ид,'подтверждено');
+    assert.equal(memory.путиПодтверждённыхФактов('стек SQLite',4,2).length,0);
+    assert.ok(memory.профильПоиска().graphWalk?.samples>=2);
+  }finally{memory.закрыть();}
+});
+
+test('Подготовка контекста имеет внутреннюю телеметрию без нового интерфейса',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Профиль');
+    memory.добавитьПару('Архитектура: SQLite','Записано',chat);
+    const context=memory.контекстПоЗапросу('архитектура sqlite',chat);
+    assert.ok(context.источники.length>0);
+    const metrics=memory.профильПоиска();
+    assert.equal(metrics.contextBuild.samples,1);
+    assert.ok(metrics.contextBuild.averageMs>=0);
+  }finally{memory.закрыть();}
+});
