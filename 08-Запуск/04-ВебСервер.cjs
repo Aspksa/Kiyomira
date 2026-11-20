@@ -62,6 +62,9 @@ async function создатьВебСервер({ корень = resolve(__dirna
   let векторизацияЗанята = false;
   const активные = new Map();
   const ожидают = new Set();
+  let фоновыйТаймер = null;
+  let фоноваяОшибка = '';
+  let фоновыхПакетов = 0;
   const демонстрация = new ТестоваяМодель();
   const провайдер = {
     async создатьОтветПотоком(история, сигнал, onChunk) {
@@ -142,7 +145,10 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{uptimeSeconds:Math.round(process.uptime()),
           rssBytes:mem.rss,heapUsedBytes:mem.heapUsed,
           heapTotalBytes:mem.heapTotal,activeRequests:активные.size,
-          persistedMessages:база.размер(),brainEvents:событияМозга.length});
+          persistedMessages:база.размер(),brainEvents:событияМозга.length,
+          memoryIndex:база.состояниеФоновойПамяти(),
+          memorySearchTimings:база.профильПоиска(),
+          memoryIndexBatches:фоновыхПакетов,memoryIndexError:фоноваяОшибка});
       }
       if (запрос.method === 'GET' && путь === '/api/brain/events') {
         const since = Math.max(0, Number(url.searchParams.get('after'))||0);
@@ -431,6 +437,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
   async function закрыть() {
     if (закрывается) return;
     закрывается = true;
+    if(фоновыйТаймер)clearInterval(фоновыйТаймер);
     for (const c of активные.values()) c.abort();
     await Promise.allSettled([...ожидают]);
     await ядро.остановить();
@@ -449,6 +456,17 @@ async function создатьВебСервер({ корень = resolve(__dirna
     });
   } catch(e) { await ядро.остановить(); база.закрыть(); throw e; }
   origin = 'http://127.0.0.1:' + сервер.address().port;
+  // Idle-only, bounded and restart-safe. This is in-process maintenance,
+  // never a separate daemon or additional Cloud.ru request.
+  фоновыйТаймер=setInterval(()=>{
+    if(закрывается||активные.size||ожидают.size)return;
+    try{
+      const result=база.обработатьФоновуюПамять(12);
+      if(result.обработано)фоновыхПакетов++;
+      фоноваяОшибка='';
+    }catch(err){фоноваяОшибка=err instanceof Error?err.name:'background-error';}
+  },1500);
+  фоновыйТаймер.unref?.();
   return { url:origin, server:сервер, close:закрыть };
 }
 
