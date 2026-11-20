@@ -119,6 +119,18 @@
         <span id="facts-summary" class="hint"></span>
       </div>
       <div id="facts-list" class="facts-list" role="list"></div>
+      <section class="indexed-documents" aria-label="Локальные документы памяти">
+        <h3>Документы и проекты</h3>
+        <p class="hint">Добавляются только вручную. TXT/MD до 32 000 символов. Содержимое остаётся в SQLite; Cloud.ru не вызывается.</p>
+        <label for="doc-upload">Текстовый документ</label>
+        <input id="doc-upload" type="file" accept=".md,.txt,text/plain,text/markdown">
+        <label for="doc-project">Проект (необязательно)</label>
+        <input id="doc-project" type="text" maxlength="100" placeholder="Название проекта">
+        <button type="button" id="doc-index">Добавить документ в память</button>
+        <div id="doc-list" class="doc-list"></div>
+        <pre id="doc-preview" class="doc-preview" hidden></pre>
+        <p id="doc-feedback" class="notice" role="status"></p>
+      </section>
       <div class="embedding-panel">
         <p class="hint"><strong>Экспериментальный смысловой поиск.</strong> Cloud.ru перечисляет Qwen3-Embedding, но публичная спецификация не подтверждает /embeddings. Запросы выполняются только вручную и могут тарифицироваться. Тексты выбранных сообщений отправляются в Cloud.ru при индексации.</p>
         <p class="hint" id="embedding-status">Векторизация не запускалась.</p>
