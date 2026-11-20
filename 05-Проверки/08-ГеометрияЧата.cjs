@@ -143,6 +143,35 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         assert.equal(balance.manual.percent,balance.savedManual,'manual mode must restore explicitly saved width, not auto focus width');
       }
 
+
+      const comets=await evaluate(`(()=>{
+        const host=document.getElementById('workspace');
+        const layer=document.getElementById('cognitive-comets');
+        const unit=window.KiyomiraUnity;
+        if(!layer||!unit?.getStats||!window.KiyomiraBrain?.getSourceScreenPoints)
+          return {error:'Missing photon comet layer'};
+        unit.signal('send');
+        const sent=unit.getStats();
+        unit.signal('error');
+        const error=unit.getStats();
+        unit.signal('recall',[99999999]); // Unknown SQLite id must create no phantom trail.
+        const empty=unit.getStats();
+        const styles=getComputedStyle(layer);
+        return {sent,errorState:error,empty,
+          layerPointerEvents:styles.pointerEvents,
+          layerDisplay:styles.display,
+          reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+          activeClass:host.classList.contains('comet-layer-enabled')};
+      })()`);
+      assert.ok(!comets.failure,JSON.stringify(comets));
+      assert.equal(comets.layerPointerEvents,'none','effect layer must not intercept chat or zoom clicks');
+      assert.equal(comets.activeClass,true,'comet layer should activate only with Canvas context');
+      if(width>=701&&!comets.reducedMotion){
+        assert.ok(comets.sent.activeEffects>=1,'a real user submit needs a visible comet');
+        assert.equal(comets.errorState.kind,'error','errors must never be animated as success');
+        assert.equal(comets.empty.activeEffects,comets.errorState.activeEffects,'unknown SQLite source must not invent trail');
+      }else assert.equal(comets.layerDisplay,'none','comet overlay should not obstruct mobile UI');
+
       const unity=await evaluate(`(()=>{
         const host=document.getElementById('workspace');
         const flow=document.getElementById('cognitive-flow');
