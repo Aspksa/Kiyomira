@@ -215,7 +215,7 @@ if (require.main === module) {
     const stop = () => {
       if (остановка) return;
       остановка = true;
-      void app.close().then(() => { process.exitCode = 0; }).catch(() => { process.exitCode = 1; });
+      void app.close().then(() => { process.exitCode = 0; if (process.connected) process.disconnect(); }).catch(() => { process.exitCode = 1; if (process.connected) process.disconnect(); });
     };
     process.on('SIGINT',stop);
     process.on('SIGTERM',stop);
