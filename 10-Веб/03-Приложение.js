@@ -631,9 +631,14 @@ function initCognitiveFlow(){
       ctx.globalCompositeOperation='source-over';
     }
     if(effects.length)effectFrame=requestAnimationFrame(frame);
+    else{
+      currentKind=null;
+      workspace.classList.remove('flow-active','flow-to-brain','flow-to-chat','flow-recall');
+    }
   }
   function signal(kind,sources=[]){
     if(!config[kind])return;
+    if(kind==='recall'&&(!Array.isArray(sources)||!sourcePoints(sources).length))return;
     currentKind=kind;layout();
     workspace.classList.remove('flow-to-brain','flow-to-chat','flow-recall','flow-active');
     void pulse.getBoundingClientRect();
