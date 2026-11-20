@@ -1,0 +1,406 @@
+/* Unified brain/chat surface: imported in cascade after the base stylesheet. */
+/* Kiyomira 4.0: one black surface, no visible division between the brain and chat. */
+.unified-workspace{
+  position:relative;isolation:isolate;
+  background:
+    radial-gradient(ellipse 52% 68% at 36% 48%,rgba(238,138,60,.045),transparent 73%),
+    linear-gradient(90deg,#030201,#050302 76%,#030201);
+  --chat-percent:35%;
+  grid-template-columns:minmax(0,1fr) 7px minmax(260px,var(--chat-percent));
+}
+.unified-workspace > .brain-panel,
+.unified-workspace > .chat-view{background:transparent;border:0;position:relative;z-index:2}
+.unified-workspace .brain-head,
+.unified-workspace .brain-controls,
+.unified-workspace .brain-footer,
+.unified-workspace .conversation-head{border-color:transparent}
+.unified-workspace .brain-head{padding-top:11px;padding-bottom:7px}
+.unified-workspace .brain-head h1{font-size:1rem;font-weight:400}
+.unified-workspace .brain-stage{background:transparent}
+.unified-workspace .brain-controls{background:rgba(0,0,0,.11)}
+.unified-workspace .workspace-divider{
+  z-index:6;background:transparent;border:0;
+  cursor:col-resize;outline-offset:-2px;
+}
+.unified-workspace .workspace-divider::after{
+  background:rgba(238,138,60,.10);width:1px;left:3px;height:28px;
+  transition:height .2s,background .2s;
+}
+.unified-workspace .workspace-divider:hover::after,
+.unified-workspace .workspace-divider:focus-visible::after{
+  background:rgba(255,207,154,.68);height:62px;
+}
+.unified-workspace .chat-view{padding-left:clamp(8px,1.2vw,18px);padding-right:clamp(11px,1.25vw,22px)}
+.unified-workspace .conversation-head{padding-top:12px;padding-bottom:9px}
+.unified-workspace .conversation-head h1{font-size:1rem;font-weight:500}
+.unified-workspace .messages{background:transparent}
+.unified-workspace .composer-wrap{background:linear-gradient(0deg,rgba(0,0,0,.76),transparent)}
+.unified-workspace .composer{background:rgba(9,6,4,.85)}
+.cognitive-flow{
+  position:absolute;inset:0;width:100%;height:100%;
+  z-index:3;pointer-events:none;overflow:visible;
+  opacity:0;transition:opacity .2s ease;
+}
+.cognitive-flow .flow-path{
+  fill:none;stroke:rgba(238,138,60,.14);stroke-width:1.1;
+  stroke-linecap:round;vector-effect:non-scaling-stroke;
+}
+.cognitive-flow .flow-pulse{
+  fill:none;stroke:#f5c68c;stroke-width:2.3;
+  stroke-linecap:round;vector-effect:non-scaling-stroke;
+  stroke-dasharray:0 1000;stroke-dashoffset:0;opacity:0;
+}
+.unified-workspace.flow-active .cognitive-flow{opacity:1}
+.unified-workspace.flow-active .flow-pulse{opacity:.95;stroke-dasharray:18 1500}
+.unified-workspace.flow-to-brain .flow-pulse{
+  animation:cognitive-travel-to-brain 1.05s linear 1 both;
+}
+.unified-workspace.flow-to-chat .flow-pulse{
+  animation:cognitive-travel-to-chat 1.05s linear 1 both;
+}
+.unified-workspace.flow-recall .flow-pulse{
+  stroke:#8bc2a9;animation:cognitive-travel-to-chat 1.15s linear 1 both;
+}
+@keyframes cognitive-travel-to-brain{
+  from{stroke-dashoffset:0}to{stroke-dashoffset:1500}
+}
+@keyframes cognitive-travel-to-chat{
+  from{stroke-dashoffset:1500}to{stroke-dashoffset:0}
+}
+@media(max-width:1000px) and (min-width:701px){
+  .unified-workspace{grid-template-columns:minmax(0,1fr) 7px minmax(260px,var(--chat-percent))}
+}
+@media(max-width:700px){
+  .unified-workspace{display:flex;background:#030201}
+  .unified-workspace .cognitive-flow,
+  .unified-workspace .workspace-divider{display:none}
+  .unified-workspace > .brain-panel,
+  .unified-workspace > .chat-view{flex:1;min-height:0;max-height:100%}
+  .unified-workspace .chat-view{padding-left:12px;padding-right:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .flow-pulse{animation:none!important;opacity:0}
+  .cognitive-flow{transition:none}
+}
+
+/* Kiyomira 5.0: a shared, real-event state palette. */
+.unified-workspace{--cognitive-activity:#c18a53}
+.unified-workspace[data-activity="контекст"]{--cognitive-activity:#85baa6}
+.unified-workspace[data-activity="генерация"]{--cognitive-activity:#d9a568}
+.unified-workspace[data-activity="сохранение"]{--cognitive-activity:#85baa6}
+.unified-workspace[data-activity="ответ"]{--cognitive-activity:#e7c78c}
+.unified-workspace[data-activity="ошибка"]{--cognitive-activity:#e0795f}
+.unified-workspace .brain-live.running{color:var(--cognitive-activity);border-color:var(--cognitive-activity)}
+.unified-workspace .message-sources{
+  border:1px solid rgba(130,180,159,.25);background:rgba(130,180,159,.07);
+  color:#9ac5af;font-size:11px;margin-top:8px;padding:5px 9px;text-align:left;
+}
+.unified-workspace .message-sources:hover{border-color:#9ac5af;color:#d1e7d7}
+.unified-workspace .message.source-active{
+  outline:1px solid rgba(255,207,154,.6);outline-offset:2px;
+  background:rgba(238,138,60,.05);
+}
+.source-history-note{font-size:11px;color:#ad9d89;padding:7px 3px}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{scroll-behavior:auto}
+}
+
+/* Document nodes only represent actual user-imported text in SQLite. */
+.indexed-documents{display:flex;flex-direction:column;gap:8px;margin-top:16px;padding:12px;
+  border:1px solid rgba(130,180,159,.24);background:#050504}
+.indexed-documents h3{font-size:.9rem;font-weight:500;color:#b6d1b9}
+.indexed-documents label{color:#c9b69f;font-size:12px}
+.indexed-documents input{max-width:100%;font-size:12px}
+.indexed-documents button{font-size:11px;min-height:32px}
+.doc-list{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.doc-row{display:flex;align-items:center;gap:7px}
+.doc-row button:first-child{flex:1;min-width:0;overflow-wrap:anywhere;text-align:left}
+.doc-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;
+  background:#080706;border:1px solid rgba(130,180,159,.23);padding:12px;
+  color:#decfbb;font:12px/1.6 var(--mono)}
+
+/* Kiyomira 6: one canvas, stable chat composer and activity-driven split. */
+.unified-workspace{transition:grid-template-columns .26s ease-out}
+.unified-workspace.workspace-resizing{transition:none}
+.unified-workspace .brain-head,
+.unified-workspace .conversation-head{min-height:0}
+.unified-workspace .brain-controls #brain-auto-layout{
+  border-color:rgba(238,138,60,.24);
+  color:#d7ac7c;
+}
+.unified-workspace .brain-controls #brain-auto-layout[aria-pressed="false"]{
+  color:#9d8b79;border-color:rgba(238,138,60,.08)
+}
+.unified-workspace .brain-stage canvas{display:block;max-width:100%;max-height:100%}
+@media(max-width:700px){
+  .unified-workspace{transition:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace{transition:none}
+}
+
+/* Kiyomira 7 · TRACKTOR Neural: unified blue-black/cyan/copper UI, source-backed motion. */
+.unified-workspace{
+  background:
+    radial-gradient(ellipse 58% 78% at 31% 52%,rgba(39,132,147,.075),transparent 70%),
+    radial-gradient(ellipse 30% 54% at 78% 65%,rgba(207,142,82,.034),transparent 80%),
+    #02070b;
+  --cognitive-activity:#72cfc0;
+}
+.unified-workspace > .brain-panel,
+.unified-workspace > .chat-view{background:transparent}
+.unified-workspace .brain-head .section-kicker,
+.unified-workspace .conversation-head .section-kicker{
+  color:#78afbc;letter-spacing:.15em;
+}
+.unified-workspace .brain-head h1,
+.unified-workspace .conversation-head h1{color:#c5d9d8;letter-spacing:.03em}
+.unified-workspace .brain-controls{background:rgba(5,19,27,.30)}
+.unified-workspace .brain-controls button{
+  transition:color .16s ease,border-color .16s ease,background .16s ease;
+}
+.unified-workspace .brain-controls button:hover,
+.unified-workspace .brain-controls button.selected{
+  color:#b7efe1;border-color:rgba(89,192,177,.52);
+  background:rgba(30,106,113,.12);
+}
+.unified-workspace .brain-live.running{
+  color:#a0edd9;
+  box-shadow:0 0 0 1px rgba(84,185,174,.12),0 0 22px rgba(71,170,159,.14);
+}
+.unified-workspace .workspace-divider::after{background:rgba(90,169,164,.14)}
+.unified-workspace .workspace-divider:hover::after,
+.unified-workspace .workspace-divider:focus-visible::after{background:rgba(109,213,197,.78)}
+.unified-workspace .messages{scroll-behavior:smooth;overscroll-behavior:contain}
+.unified-workspace .message{
+  animation:kiyomira-message-enter .24s ease-out both;
+  transform-origin:100% 100%;
+}
+.unified-workspace .message.assistant{transform-origin:0 100%}
+@keyframes kiyomira-message-enter{
+  from{opacity:.4;transform:translateY(5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.unified-workspace .message.assistant .message-label{color:#7fc2b7}
+.unified-workspace .message.user .message-label{color:#d6ae7c}
+.unified-workspace .composer-wrap{
+  flex:0 0 auto;z-index:4;min-height:0;
+  background:linear-gradient(to top,rgba(2,7,11,.98),rgba(2,7,11,.65) 70%,transparent);
+}
+.unified-workspace .composer{
+  border:1px solid rgba(102,163,163,.28);
+  background:rgba(7,16,23,.86);
+  box-shadow:0 8px 40px rgba(0,0,0,.2);
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+.unified-workspace .composer:focus-within{
+  border-color:rgba(111,211,189,.63);
+  box-shadow:0 0 0 1px rgba(111,211,189,.10),0 0 28px rgba(50,160,145,.095);
+}
+.unified-workspace #send{
+  flex:0 0 36px;min-width:36px;min-height:36px;max-height:36px;
+  border-color:#b8915e;background:#b8915e;color:#070d11;
+  transition:filter .16s ease,transform .16s ease,background .16s ease;
+}
+.unified-workspace #send:hover:not(:disabled){filter:brightness(1.14);transform:translateY(-1px)}
+.unified-workspace #send:active:not(:disabled){transform:translateY(0)}
+.unified-workspace .message-sources{border-color:rgba(101,190,170,.3)}
+.unified-workspace .message.source-active{outline-color:#75c7b8}
+.unified-workspace .cognitive-flow .flow-path{stroke:rgba(86,187,179,.23)}
+.unified-workspace .cognitive-flow .flow-pulse{stroke:#83dec9}
+@media(max-width:700px){
+  .unified-workspace .composer-wrap{padding-bottom:max(6px,env(safe-area-inset-bottom))}
+  .unified-workspace #send{flex-basis:36px}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{animation:none}
+  .unified-workspace .messages{scroll-behavior:auto}
+  .unified-workspace #send{transition:none}
+}
+
+/* Kiyomira 8 · spatial modes, readable zoom levels, quality guardrails. */
+.unified-workspace .brain-zoom-level{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:64px;padding:4px 7px;font-size:.68rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.03em;
+  color:#a7d4cb;border:1px solid rgba(100,177,168,.20);
+  border-radius:3px;background:rgba(4,25,31,.4);
+}
+.unified-workspace #brain-zoom-in,
+.unified-workspace #brain-zoom-out{
+  min-width:33px;min-height:33px;
+  padding:4px 8px;font-size:1rem;
+  color:#b0d8d1;
+}
+.unified-workspace .brain-controls{flex:0 0 auto;min-height:44px}
+.unified-workspace .brain-footer{flex:0 0 auto;min-height:32px}
+.unified-workspace .brain-stage{flex:1 1 0;min-height:0}
+.unified-workspace .brain-stage canvas{outline-offset:-3px}
+.unified-workspace button:focus-visible,
+.unified-workspace [role="separator"]:focus-visible{
+  outline:2px solid #b1e3d6;outline-offset:2px;
+}
+@media(max-width:1000px){
+  .unified-workspace .brain-controls{gap:4px;padding:7px 5px}
+  .unified-workspace .brain-controls button{padding:6px 7px;font-size:.69rem}
+  .unified-workspace .brain-zoom-level{min-width:58px}
+}
+@media(max-width:700px){
+  .unified-workspace .brain-stage{min-height:0}
+  .unified-workspace .brain-controls{max-height:108px;overflow-y:auto}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .brain-stage,
+  .unified-workspace .brain-controls{scroll-behavior:auto}
+}
+
+/* Mizuyori-inspired photon comets are isolated from the expensive graph Canvas.
+   Static SVG route and brain layers do not repaint for each travelling particle. */
+.unified-workspace .cognitive-comets{
+  display:block;position:absolute;inset:0;width:100%;height:100%;
+  z-index:4;pointer-events:none;background:transparent;
+}
+.unified-workspace.comet-layer-enabled .cognitive-flow .flow-pulse{
+  animation:none!important;stroke-dasharray:none;opacity:0;
+}
+.unified-workspace.comet-layer-enabled .cognitive-flow .flow-path{
+  stroke:rgba(88,196,255,.15);
+}
+.unified-workspace[data-activity="ошибка"] .cognitive-flow .flow-path{
+  stroke:rgba(226,108,98,.24);
+}
+@media(max-width:700px){
+  .unified-workspace .cognitive-comets{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .cognitive-comets{display:none}
+  .unified-workspace .cognitive-flow{transition:none}
+}
+
+/* Kiyomira 10 · one neural surface: remove seams, preserve tactile hit areas. */
+.unified-workspace .brain-panel,
+.unified-workspace .chat-view{
+  border:0!important;
+  box-shadow:none;
+  background:transparent;
+}
+.unified-workspace .brain-head,
+.unified-workspace .conversation-head,
+.unified-workspace .brain-footer,
+.unified-workspace .brain-controls{
+  border:0!important;box-shadow:none;
+}
+.unified-workspace .messages{
+  scroll-anchor:auto;
+  overflow-anchor:none;
+  min-height:0;
+  background:transparent;
+}
+.unified-workspace .message{
+  background:rgba(6,20,25,.20);
+  border:1px solid transparent;
+  border-radius:10px;
+  box-shadow:none;
+  overflow-wrap:anywhere;
+}
+.unified-workspace .message.user{
+  background:rgba(30,95,105,.13);
+  border-color:rgba(98,180,179,.09);
+}
+.unified-workspace .message.assistant{
+  border-color:transparent;
+  background:transparent;
+}
+.unified-workspace .message.source-active{
+  outline:1px solid #67cab7;
+}
+.unified-workspace .conversation-head,
+.unified-workspace .brain-head{
+  background:transparent;
+}
+.unified-workspace .composer-wrap{
+  position:relative;
+  isolation:isolate;
+  min-height:0;
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{animation:none!important}
+  .unified-workspace .messages{scroll-behavior:auto}
+}
+
+
+/* Unified UX: a calmer, borderless conversation and contextual brain tools.
+   All changes are scoped to the unified workspace and keep touch controls visible. */
+.unified-workspace .chat-view,
+.unified-workspace .conversation-head,
+.unified-workspace .messages,
+.unified-workspace .composer-wrap{background:transparent;border:0;box-shadow:none}
+.unified-workspace .message,
+.unified-workspace .message.user,
+.unified-workspace .message.assistant{
+  background:transparent;border:0;border-radius:0;box-shadow:none;
+  max-width:100%;padding-inline:clamp(10px,1.5vw,24px)
+}
+.unified-workspace .message.user .message-body{
+  border-left:2px solid rgba(209,166,106,.48);
+  padding-left:clamp(10px,1.2vw,18px)
+}
+.unified-workspace .composer-wrap{
+  padding-top:clamp(8px,1.4vh,18px);
+  background:linear-gradient(to top,rgba(0,0,0,.92) 12%,rgba(0,0,0,.36) 75%,transparent)
+}
+.unified-workspace .composer{
+  border-radius:14px;background:rgba(7,13,17,.78);
+  backdrop-filter:blur(12px)
+}
+@media(hover:hover) and (pointer:fine){
+  .unified-workspace .brain-controls button:not(.selected):not(:focus-visible){
+    opacity:.64;transition:opacity .18s ease,background .18s ease
+  }
+  .unified-workspace .brain-controls:hover button,
+  .unified-workspace .brain-controls:focus-within button{opacity:1!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .brain-controls button{transition:none!important}
+}
+
+/* Unified design tokens: one consistent rhythm across graph, chat and controls.
+   This layer supersedes older visual experiments without rewriting their layout. */
+:root{
+  --ki-space-1:4px;--ki-space-2:8px;--ki-space-3:12px;
+  --ki-space-4:16px;--ki-space-5:24px;--ki-space-6:32px;
+  --ki-type-small:clamp(11px,.7vw + 8px,13px);
+  --ki-type-body:clamp(13px,.45vw + 11px,16px);
+  --ki-type-title:clamp(17px,.75vw + 13px,22px);
+}
+.unified-workspace{
+  background:
+    radial-gradient(ellipse 54% 70% at 34% 48%,rgba(49,131,143,.065),transparent 72%),
+    radial-gradient(ellipse 46% 54% at 79% 65%,rgba(188,130,68,.028),transparent 74%),
+    #000;
+}
+.unified-workspace .brain-head,
+.unified-workspace .conversation-head{
+  padding:var(--ki-space-3) var(--ki-space-4);
+}
+.unified-workspace .brain-head h1,
+.unified-workspace .conversation-head h1{
+  font-size:var(--ki-type-title);line-height:1.25;letter-spacing:0;
+}
+.unified-workspace .message-body{
+  font-size:var(--ki-type-body);line-height:1.65;overflow-wrap:anywhere;
+}
+.unified-workspace .section-kicker,
+.unified-workspace .message-label,
+.unified-workspace .brain-footer{font-size:var(--ki-type-small)}
+.unified-workspace .messages{padding-block:var(--ki-space-4)}
+.unified-workspace .brain-controls{gap:var(--ki-space-1);padding:var(--ki-space-2)}
+.unified-workspace .brain-controls button{
+  border-radius:8px;min-height:32px;
+}
+.unified-workspace .composer{border-radius:14px}
+@media(max-width:700px){
+  .unified-workspace .brain-head,
+  .unified-workspace .conversation-head{padding:var(--ki-space-2) var(--ki-space-3)}
+  .unified-workspace .messages{padding-block:var(--ki-space-2)}
+}
