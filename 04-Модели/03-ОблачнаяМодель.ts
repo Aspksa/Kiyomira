@@ -87,4 +87,52 @@ export class ОблачнаяМодель implements ПровайдерМоде�
     if (typeof текст !== 'string' || !текст.trim()) throw new Error('Cloud.ru вернул пустой или неверный ответ');
     return текст;
   }
+  // OpenAI-compatible Cloud.ru SSE: only [DONE] marks an atomic complete answer.
+  async создатьОтветПотоком(
+    история: readonly Сообщение[], сигнал: AbortSignal|undefined,
+    onChunk:(chunk:string)=>void, максТокенов=2500
+  ):Promise<string>{
+    if(!Number.isSafeInteger(максТокенов)||максТокенов<1||максТокенов>8192)throw new Error('Недопустимый лимит токенов');
+    const response=await this.выполнить('/chat/completions',{
+      method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+      body:JSON.stringify({model:this.модель,stream:true,max_tokens:максТокенов,
+        messages:история.map(m=>({role:m.роль==='пользователь'?'user':'assistant',content:m.текст}))}),
+      signal:сигнал
+    },60000);
+    if(!response.body)throw new Error('Cloud.ru не вернул поток ответа');
+    const reader=response.body.getReader(),decoder=new TextDecoder();
+    let buffer='',answer='',done=false;
+    try {
+      while(true){
+        const item=await reader.read();
+        if(item.done)break;
+        if(сигнал?.aborted)throw new Error('Запрос Cloud.ru отменён');
+        buffer+=decoder.decode(item.value,{stream:true});
+        if(buffer.length>262144)throw new Error('Cloud.ru: слишком длинный фрагмент потока');
+        let split;
+        while((split=buffer.indexOf('\n'))>=0){
+          const line=buffer.slice(0,split).trim();
+          buffer=buffer.slice(split+1);
+          if(!line.startsWith('data:'))continue;
+          const data=line.slice(5).trim();
+          if(data==='[DONE]'){done=true;break;}
+          if(!data)continue;
+          let packet;
+          try{packet=JSON.parse(data);}catch{throw new Error('Cloud.ru: повреждён поток ответа');}
+          if(packet.error)throw new Error('Cloud.ru: генерация завершилась ошибкой');
+          const delta=packet.choices?.[0]?.delta?.content;
+          if(typeof delta==='string'&&delta.length){
+            answer+=delta;
+            if(answer.length>500000)throw new Error('Cloud.ru: ответ слишком большой');
+            onChunk(delta);
+          }
+        }
+        if(done)break;
+      }
+      if(сигнал?.aborted)throw new Error('Запрос Cloud.ru отменён');
+      if(!done||!answer.trim())throw new Error('Cloud.ru: поток завершён без полного ответа');
+      return answer;
+    }finally{await reader.cancel().catch(()=>{});}
+  }
+
 }
