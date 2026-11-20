@@ -367,6 +367,15 @@
     const ambience=ctx.createRadialGradient(glowX,glowY,0,width/2,height/2,Math.max(width,height)*.7);
     ambience.addColorStop(0,'rgba(62,166,166,.047)');ambience.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=ambience;ctx.fillRect(0,0,width,height);
+    // 2.5D parallax uses existing camera offset, not invented knowledge.
+    // Far / mid / foreground layers move at different fractions of the same pan.
+    const depth=ctx.createRadialGradient(
+      width*.5+pan.x*.12,height*.5+pan.y*.12,14,
+      width*.5+pan.x*.12,height*.5+pan.y*.12,Math.max(width,height)*.54);
+    depth.addColorStop(0,'rgba(63,153,176,.065)');
+    depth.addColorStop(.58,'rgba(40,89,117,.027)');
+    depth.addColorStop(1,'rgba(2,7,11,0)');
+    ctx.fillStyle=depth;ctx.fillRect(0,0,width,height);
     ctx.save();
     ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom*fitScale(),zoom*fitScale());
     const glow=ctx.createRadialGradient(0,0,5,0,0,300);
@@ -433,6 +442,21 @@
       ctx.globalAlpha=1;
 
     }
+    if(mode==='timeline'){
+      // Time axis reflects actual SQLite message insertion order, not model guesses.
+      ctx.strokeStyle='rgba(97,191,178,.24)';ctx.lineWidth=.9;
+      ctx.beginPath();ctx.moveTo(-196,0);ctx.lineTo(264,0);ctx.stroke();
+      ctx.textAlign='left';ctx.font='10px ui-monospace,Consolas,monospace';
+      ctx.fillStyle='#7bbab1';ctx.fillText('РАНЬШЕ',-198,-149);
+      ctx.textAlign='right';ctx.fillText('ПОЗЖЕ',258,-149);
+      const tracks=nodes.filter(n=>n.kind==='cluster');
+      for(const group of tracks){
+        ctx.strokeStyle='rgba(88,140,156,.16)';ctx.lineWidth=.5;
+        ctx.beginPath();ctx.moveTo(-193,group.y);ctx.lineTo(260,group.y);ctx.stroke();
+        ctx.fillStyle=palette[Math.abs(group.group||0)%palette.length];
+        ctx.textAlign='right';ctx.fillText(group.label.slice(0,13),-205,group.y+3);
+      }
+    }
     if(mode==='honeycomb'){
       nodes.filter(n=>n.kind==='cluster').forEach(n=>{
         const radius=48+Math.min(30,Math.sqrt(Math.max(1,n.count||1))*3.3);
@@ -462,15 +486,18 @@
     for(const [a,b,relationType] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
       if(detailZoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
-      const hot=recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
-      ctx.lineWidth=hot?1.35:.7;
-      ctx.strokeStyle=hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
+      const route=sourceRouteEdges.has(a+':'+b);
+      const hot=route||recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
+      ctx.lineWidth=route?2:hot?1.35:.7;
+      ctx.strokeStyle=route?'rgba(127,230,203,.93)':hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
       ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
       // A bounded illumination travels ONLY along links to source IDs reported by SQLite.
-      if(waveActive&&(memoryWaveIds.has(to.id)||memoryWaveIds.has(from.id))){
-        const t=clamp((waveAge/1500)*1.3-.12,0,1);
+      if((waveActive&&(memoryWaveIds.has(to.id)||memoryWaveIds.has(from.id)))||
+        (route&&time<routeUntil&&!motion.matches)){
+        const routeAge=clamp(1-(routeUntil-time)/2400,0,1);
+        const t=route?routeAge:clamp((waveAge/1500)*1.3-.12,0,1);
         const x=from.x+(to.x-from.x)*t,y=from.y+(to.y-from.y)*t;
-        ctx.globalAlpha=.83*(1-waveAge/1500);
+        ctx.globalAlpha=route?.92:.83*(1-waveAge/1500);
         ctx.fillStyle='#92e6d2';circle(x,y,2.5);ctx.fill();ctx.globalAlpha=1;
       }
     }
@@ -492,7 +519,9 @@
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
       const faded=(hovered&&n.kind!=='core'&&n.group!==hovered.group)||
         (!hovered&&activeChat&&n.kind!=='core'&&n.chatId&&n.chatId!==activeChat);
-      if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&detailZoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
+      const densityThreshold=nodes.length>900?1.3:nodes.length>500?1.05:nodes.length>160?.8:.28;
+      if((n.kind==='message'||n.kind==='fact')&&detailZoom<densityThreshold&&
+        !recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&detailZoom<.55&&!isSelected)continue;
       if(faded)ctx.globalAlpha=.23;
       const size=core?22:cluster?12:chat?6.8:n.kind==='project'?9:n.kind==='document'?5:n.kind==='fact'?4:2.7;
@@ -546,7 +575,14 @@
   function loop(t){
     raf=0;if(!visible)return;
     const moving=interpolate();
-    if(t-lastTick>=25){draw(t);lastTick=t;}
+    if(t-lastTick>=renderStep){
+      const began=performance.now();draw(t);lastTick=t;
+      lastDrawCost=performance.now()-began;measuredFrames++;
+      if(measuredFrames%12===0){
+        // Dynamic throttle: only lower FPS after consistently costly frames.
+        renderStep=lastDrawCost>25?50:lastDrawCost>13||nodes.length>850?33:25;
+      }
+    }
     if(active||moving||t<flashUntil||phase==='response'&&t-phaseAt<1500||phase==='error'&&t-phaseAt<1200)request();
     else if(phase!=='idle')setPhase('idle');
   }
