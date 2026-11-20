@@ -650,3 +650,39 @@ html,body{height:100%;overflow:hidden}
   .unified-workspace .message{animation:none!important}
   .unified-workspace .messages{scroll-behavior:auto}
 }
+
+
+/* Unified UX: a calmer, borderless conversation and contextual brain tools.
+   All changes are scoped to the unified workspace and keep touch controls visible. */
+.unified-workspace .chat-view,
+.unified-workspace .conversation-head,
+.unified-workspace .messages,
+.unified-workspace .composer-wrap{background:transparent;border:0;box-shadow:none}
+.unified-workspace .message,
+.unified-workspace .message.user,
+.unified-workspace .message.assistant{
+  background:transparent;border:0;border-radius:0;box-shadow:none;
+  max-width:100%;padding-inline:clamp(10px,1.5vw,24px)
+}
+.unified-workspace .message.user .message-body{
+  border-left:2px solid rgba(209,166,106,.48);
+  padding-left:clamp(10px,1.2vw,18px)
+}
+.unified-workspace .composer-wrap{
+  padding-top:clamp(8px,1.4vh,18px);
+  background:linear-gradient(to top,rgba(0,0,0,.92) 12%,rgba(0,0,0,.36) 75%,transparent)
+}
+.unified-workspace .composer{
+  border-radius:14px;background:rgba(7,13,17,.78);
+  backdrop-filter:blur(12px)
+}
+@media(hover:hover) and (pointer:fine){
+  .unified-workspace .brain-controls button:not(.selected):not(:focus-visible){
+    opacity:.64;transition:opacity .18s ease,background .18s ease
+  }
+  .unified-workspace .brain-controls:hover button,
+  .unified-workspace .brain-controls:focus-within button{opacity:1!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .brain-controls button{transition:none!important}
+}

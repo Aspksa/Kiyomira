@@ -63,17 +63,9 @@ function message(role,text,temporary=false,record=null) {
   const body=document.createElement('div');
   body.className='message-body';body.innerHTML=markdown(text);
   article.append(label,body);
-  if(role==='ассистент'&&Array.isArray(record?.sources)&&record.sources.length){
-    const sourceButton=document.createElement('button');
-    sourceButton.type='button';sourceButton.className='message-sources';
-    sourceButton.textContent='Маршрут ответа · '+record.sources.length+' источников';
-    sourceButton.title='Показать маршрут к использованным сообщениям SQLite';
-    sourceButton.addEventListener('click',()=>{
-      window.KiyomiraBrain?.focusSources(record.sources,record.диалог_ид||state.selected);
-      article.classList.add('source-active');
-    });
-    article.append(sourceButton);
-  }
+  // Sources remain traceable through SQLite and the brain graph, but the
+  // conversation stays free of a redundant answer-route button.
+
   el('messages').append(article);
   el('messages').scrollTop=el('messages').scrollHeight;
   return article;
