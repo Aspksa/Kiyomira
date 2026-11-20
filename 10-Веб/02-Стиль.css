@@ -227,3 +227,38 @@ body.brain-focus .brain-controls button#brain-focus{background:rgba(var(--accent
   .composer-actions #send.send-compact{width:36px;min-width:36px;height:36px;padding:0;font-size:20px}
   .composer-foot{justify-content:flex-end}
 }
+
+/* Kiyomira 2.0: resizable 2-pane workspace. No extra dependencies. */
+.workspace{
+  --chat-percent:35%;
+  grid-template-columns:minmax(0,1fr) 7px minmax(260px,var(--chat-percent));
+}
+.workspace-divider{
+  position:relative;z-index:5;cursor:col-resize;touch-action:none;
+  background:#0c0704;border-left:1px solid rgba(238,138,60,.14);
+  border-right:1px solid rgba(238,138,60,.14);
+}
+.workspace-divider::after{
+  content:'';position:absolute;left:2px;top:50%;transform:translateY(-50%);
+  width:2px;height:42px;border-radius:2px;background:rgba(238,138,60,.42);
+}
+.workspace-divider:focus-visible{outline:2px solid #ffcf9a;outline-offset:-2px}
+.workspace-divider:hover::after,.workspace-divider:focus-visible::after{background:#ffcf9a}
+.brain-stage{isolation:isolate}
+.brain-live.running{animation:kiyomira-live-glow 1.5s ease-in-out infinite}
+@keyframes kiyomira-live-glow{
+  0%,100%{box-shadow:0 0 4px rgba(238,138,60,.12)}
+  50%{box-shadow:0 0 15px rgba(238,138,60,.32)}
+}
+@media(max-width:1000px) and (min-width:701px){
+ .workspace{grid-template-columns:minmax(0,1fr) 7px minmax(260px,var(--chat-percent))}
+}
+@media(max-width:700px){
+ .workspace{display:flex}
+ .workspace-divider{display:none}
+ .brain-head h1{font-size:1rem}
+ .brain-live{font-size:.62rem}
+}
+@media(prefers-reduced-motion:reduce){.brain-live.running{animation:none}}
+body.brain-focus .workspace{grid-template-columns:minmax(0,1fr)}
+body.brain-focus .workspace-divider{display:none}
