@@ -161,6 +161,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{
           chats,messages,totalMessages:snapshot.всегоСообщений,
           sampledMessages:messages.length,aggregateLimit:10000,topicTotals,
+          documents:база.списокДокументов(150),
           candidates,facts:база.кандидатыФактов(200),factLinks:база.связиФактов(200),
           semanticLinks:база.связиПоСодержанию(120),factConflicts:база.противоречияФактов(60),latest:номерСобытия
         });
@@ -172,6 +173,28 @@ async function создатьВебСервер({ корень = resolve(__dirna
         if(!item)throw ошибка('Сообщение не найдено',404);
         return json(ответ,200,{message:item,
           sources:item.роль==='ассистент'?база.источникиОтвета(item.ид):[]});
+      }
+      // Local-only manual TXT/MD import. No filesystem scanning or Cloud.ru calls.
+      if(запрос.method==='GET'&&путь==='/api/memory/documents'){
+        return json(ответ,200,{documents:база.списокДокументов(200)});
+      }
+      if(запрос.method==='POST'&&путь==='/api/memory/documents'){
+        const данные=await телоЗапроса(запрос);
+        if(typeof данные.title!=='string'||typeof данные.text!=='string'||
+          typeof данные.project!=='string'||!данные.title.trim()||
+          !данные.text.trim()||данные.title.length>140||данные.text.length>32000||
+          данные.project.length>100)throw ошибка('Неверный текст документа',400);
+        return json(ответ,201,{document:база.индексироватьДокумент(данные.title,данные.text,данные.project)});
+      }
+      const docRoute=путь.match(/^\/api\/memory\/documents\/(\d+)$/);
+      if(docRoute&&запрос.method==='GET'){
+        const document=база.документПоИд(Number(docRoute[1]));
+        if(!document)throw ошибка('Документ не найден',404);
+        return json(ответ,200,{document});
+      }
+      if(docRoute&&запрос.method==='DELETE'){
+        if(!база.удалитьДокумент(Number(docRoute[1])))throw ошибка('Документ не найден',404);
+        return json(ответ,200,{ok:true});
       }
       if (запрос.method === 'GET' && путь === '/api/memory/search') {
         const q=String(url.searchParams.get('q')||'').slice(0,160);
