@@ -65,67 +65,119 @@
     layoutStarted=now();
     request();
   }
-  function update(data){
-    const chats=Array.isArray(data?.chats)?data.chats.slice(0,24):[];
+  // Themes are heuristic labels; only actual messages/known dialogue membership are facts.
+  function update(data) {
+    const chats=Array.isArray(data.chats)?data.chats:[];
+    const rows=Array.isArray(data.messages)?data.messages.slice(-1000):[];
     const previous=new Map(nodes.map(n=>[n.id,n]));
-    const next=[{id:'core',kind:'core',x:0,y:0,tx:0,ty:0,label:'KIYOMIRA'}];
-    const links=[];
-    chatIds=chats.map(c=>c.id);
-    for(let i=0;i<chats.length;i++){
-      const chat=chats[i], messages=Array.isArray(chat.messages)?chat.messages.slice(-6):[];
-      const chatIndex=next.length;
-      const old=previous.get('c'+chat.id);
-      next.push({id:'c'+chat.id,kind:'chat',chatId:chat.id,label:preview(chat.title),group:i,index:0,groupSize:messages.length,x:old?.x,y:old?.y});
-      links.push([0,chatIndex]);
-      for(let j=0;j<messages.length;j++){
-        const m=messages[j];
-        const id='m'+chat.id+'-'+j+'-'+(m.role||'');
-        const previousNode=previous.get(id);
-        const index=next.length;
-        next.push({id,kind:'message',chatId:chat.id,label:preview(m.preview),role:m.role,group:i,index:j,groupSize:messages.length,x:previousNode?.x,y:previousNode?.y});
-        links.push([chatIndex,index]);
-      }
+    const topics=['проекты','люди','события','документы','решения','общее'];
+    const label={проекты:'Проекты',люди:'Люди',события:'События',документы:'Документы',решения:'Решения',общее:'Прочее'};
+    const buckets=new Map(topics.map(x=>[x,[]]));
+    for(const m of rows){const topic=(m.topics||[]).find(x=>buckets.has(x))||'общее';buckets.get(topic).push(m);}
+    const groups=[];
+    for(const topic of topics) {
+      const batch=buckets.get(topic);
+      for(let i=0;i<batch.length;i+=60)groups.push({topic,key:topic+':'+i/60,items:batch.slice(i,i+60),label:label[topic]});
     }
-    const changed=nodes.length!==next.length||next.some(n=>!previous.has(n.id));
-    nodes=next;edges=links;
-    selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
-    count.textContent=chats.length+' диалогов · '+(nodes.length-1)+' узлов';
-    if(!selected)info.textContent=chats.length?'Нажмите на узел для перехода к диалогу':'Память пуста. Начните диалог — появятся реальные узлы.';
-    if(changed&&previous.size>0){flashUntil=now()+850;}
-    positionNodes();
-  }
-  function setMode(next){
-    if(!['circle','honeycomb','links'].includes(next))return;
-    mode=next;zoom=1;pan={x:0,y:0};
-    document.querySelectorAll('[data-brain-mode]').forEach(button=>{
-      const on=button.dataset.brainMode===mode;
-      button.classList.toggle('selected',on);
-      button.setAttribute('aria-pressed',String(on));
+    const fresh=[{id:'core',kind:'core',x:0,y:0,tx:0,ty:0,label:'KIYOMIRA'}],links=[];
+    const chatPositions=new Map(),groupPositions=new Map();
+    groups.forEach((g,i)=>{
+      const idx=fresh.length,old=previous.get('g'+g.key);
+      fresh.push({id:'g'+g.key,kind:'cluster',label:g.label,group:i,count:g.items.length,topic:g.topic,x:old?.x,y:old?.y});
+      groupPositions.set(g.key,idx);links.push([0,idx]);
     });
-    positionNodes();
-  }
-  function setPhase(next){
-    if(!['idle','request','response','error'].includes(next))return;
-    phase=next;phaseAt=now();active=next==='request';
-    if(next==='response')flashUntil=now()+1450;
-    else if(next==='error')flashUntil=now()+1200;
-    live.textContent=next==='request'?'ЗАПРОС CLOUD.RU':next==='response'?'ОТВЕТ ПОЛУЧЕН':next==='error'?'ОШИБКА': 'ОЖИДАНИЕ';
-    live.classList.toggle('running',active);
-    live.classList.toggle('error',next==='error');
+    const messagesByChat=new Map();
+    for(const m of rows){if(!messagesByChat.has(m.chatId))messagesByChat.set(m.chatId,[]);messagesByChat.get(m.chatId).push(m);}
+    for(const chat of chats) {
+      const messages=messagesByChat.get(chat.id)||[];if(!messages.length)continue;
+      const idx=fresh.length,old=previous.get('c'+chat.id);
+      const topic=(messages[0].topics||[])[0]||'общее';
+      const g=groups.find(x=>x.topic===topic&&x.items.some(item=>item.chatId===chat.id))||groups.find(x=>x.topic===topic);
+      fresh.push({id:'c'+chat.id,kind:'chat',chatId:chat.id,label:String(chat.title||''),group:groups.indexOf(g),count:messages.length,x:old?.x,y:old?.y});
+      chatPositions.set(chat.id,idx);if(g)links.push([groupPositions.get(g.key),idx]);
+    }
+    for(const m of rows){
+      const chatIndex=chatPositions.get(m.chatId);if(chatIndex===undefined)continue;
+      const idx=fresh.length,old=previous.get('m'+m.id);
+      fresh.push({id:'m'+m.id,messageId:m.id,chatId:m.chatId,kind:'message',label:String(m.preview||''),role:m.role,group:fresh[chatIndex].group,x:old?.x,y:old?.y});
+      links.push([chatIndex,idx]);
+    }
+    nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
+    chatIds=chats.map(c=>c.id);
+    totalMessages=Number(data.totalMessages||rows.length);
+    conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
+    selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
+    count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · '+conflicts.length+' возможных конфликтов';
+    if(!selected)info.textContent=rows.length?'Темы определены автоматически. Нажмите на узел для источника.':'Память пуста. Начните разговор.';
+    layout();
+    if(previous.size>1)flashUntil=now()+650;
     request();
   }
-  function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);}
+  function layout() {
+    const groups=nodes.filter(n=>n.kind==='cluster'),chats=nodes.filter(n=>n.kind==='chat');
+    const byGroup=new Map(groups.map(n=>[n.group,[]]));
+    chats.forEach(chat=>byGroup.get(chat.group)?.push(chat));
+    for(let i=0;i<groups.length;i++){
+      const g=groups[i],a=i*2.399963229728653-Math.PI/2;
+      if(mode==='circle'){const r=110+(i%4)*39;g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
+      else if(mode==='honeycomb'){
+        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groups.length/6);
+        g.tx=(col-2.5)*146+(row%2)*73;g.ty=(row-(rows-1)/2)*128;
+      }else{const r=78+39*Math.sqrt(i);g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
+      if(!Number.isFinite(g.x)){g.x=g.tx;g.y=g.ty;}
+      const peers=byGroup.get(g.group)||[];
+      peers.forEach((chat,j)=>{
+        const angle=j*2.399963229728653;
+        const radius=17+11*Math.sqrt(j);
+        chat.tx=g.tx+Math.cos(angle)*radius;chat.ty=g.ty+Math.sin(angle)*radius;
+        if(!Number.isFinite(chat.x)){chat.x=chat.tx;chat.y=chat.ty;}
+      });
+    }
+    const byChat=new Map(chats.map(n=>[n.chatId,[]]));
+    nodes.filter(n=>n.kind==='message').forEach(n=>byChat.get(n.chatId)?.push(n));
+    for(const chat of chats){
+      const peers=byChat.get(chat.chatId)||[];
+      peers.forEach((n,i)=>{
+        const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
+        n.tx=chat.tx+Math.cos(a)*r;n.ty=chat.ty+Math.sin(a)*r;
+        if(!Number.isFinite(n.x)){n.x=n.tx;n.y=n.ty;}
+      });
+    }
+    // Stable de-overlap for semantic cluster anchors.
+    for(let repeat=0;repeat<5;repeat++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+      const a=groups[i],b=groups[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dist=Math.hypot(dx,dy)||.01;
+      const limit=mode==='honeycomb'?145:62;
+      if(dist<limit){const amount=(limit-dist)*.18;a.tx+=dx/dist*amount;a.ty+=dy/dist*amount;b.tx-=dx/dist*amount;b.ty-=dy/dist*amount;}
+    }
+    request();
+  }
+  function setMode(next) {
+    if(!['circle','honeycomb','links'].includes(next))return;
+    mode=next;
+    document.querySelectorAll('[data-brain-mode]').forEach(button=>{
+      const on=button.dataset.brainMode===mode;
+      button.classList.toggle('selected',on);button.setAttribute('aria-pressed',String(on));
+    });
+    layout();save();
+  }
+  function save(){
+    try{localStorage.setItem('kiyomira.brain.camera',JSON.stringify({mode,zoom,x:pan.x,y:pan.y}));}catch{}
+  }
   function draw(time){
     if(!width||!height)return;
     ctx.clearRect(0,0,width,height);
     ctx.fillStyle='#030201';ctx.fillRect(0,0,width,height);
+    const glowX=width/2+clamp(pan.x*.05,-32,32),glowY=height/2+clamp(pan.y*.05,-32,32);
+    const ambience=ctx.createRadialGradient(glowX,glowY,0,width/2,height/2,Math.max(width,height)*.7);
+    ambience.addColorStop(0,'rgba(238,138,60,.06)');ambience.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=ambience;ctx.fillRect(0,0,width,height);
     ctx.save();
     ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom,zoom);
     const glow=ctx.createRadialGradient(0,0,5,0,0,300);
     glow.addColorStop(0,'rgba(238,138,60,.12)');glow.addColorStop(.55,'rgba(238,138,60,.035)');glow.addColorStop(1,'rgba(238,138,60,0)');
     ctx.fillStyle=glow;circle(0,0,300);ctx.fill();
     if(mode==='circle'){
-      for(const r of [40,74,111,145,174,213,244,272]){
+      for(const r of [40,64,88,111,134,158,183,213,244,272,303]){
         ctx.strokeStyle=r===111||r===244?'rgba(238,138,60,.24)':'rgba(238,138,60,.09)';
         ctx.lineWidth=r===111?1:.6;circle(0,0,r);ctx.stroke();
       }
@@ -146,16 +198,23 @@
       ctx.globalAlpha=1;
     }
     if(mode==='honeycomb'){
-      nodes.filter(n=>n.kind==='chat').forEach(n=>{
-        hexPath(n.x,n.y,66);ctx.lineWidth=1;ctx.strokeStyle='rgba(238,138,60,.29)';ctx.stroke();
-        hexPath(n.x,n.y,63);ctx.lineWidth=.5;ctx.strokeStyle='rgba(238,138,60,.11)';ctx.stroke();
+      nodes.filter(n=>n.kind==='cluster').forEach(n=>{
+        hexPath(n.x,n.y,71);ctx.lineWidth=1;ctx.strokeStyle='rgba(238,138,60,.29)';ctx.stroke();
+        hexPath(n.x,n.y,68);ctx.lineWidth=.5;ctx.strokeStyle='rgba(238,138,60,.11)';ctx.stroke();
         ctx.fillStyle='rgba(238,138,60,.025)';ctx.fill();
       });
     }
-    // Clear provenance of highlighted edges: core -> saved dialogue -> saved message.
+    // Suspected contradictions are shown as review candidates, not verified facts.
+    for(const pair of conflicts){
+      const a=nodes.find(n=>n.messageId===pair.a),b=nodes.find(n=>n.messageId===pair.b);
+      if(!a||!b)continue;
+      ctx.strokeStyle='rgba(224,92,75,.65)';ctx.setLineDash([4,5]);ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
+    }
+    // Clear provenance of highlighted edges: core -> thematic group -> dialogue -> message.
     for(const [a,b] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
-      const hot=selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
+      const hot=recalled.has(from.id)||recalled.has(to.id)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=hot?1.35:.7;
       ctx.strokeStyle=hot?'rgba(255,207,154,.75)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
       ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
@@ -175,16 +234,18 @@
       ctx.globalAlpha=1;
     }
     for(const n of nodes){
-      const core=n.kind==='core',chat=n.kind==='chat',isSelected=selected?.id===n.id;
-      const size=core?22:chat?7.5:3.1;
+      const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
+      if(n.kind==='message'&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
+      if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
+      const size=core?22:cluster?12:chat?6.8:2.7;
       const color=core?'#ee8a3c':palette[n.group%palette.length];
-      ctx.shadowBlur=core?25:isSelected?20:chat?9:3;
+      ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
       ctx.shadowColor=color;
-      ctx.fillStyle=core?'#251306':isSelected?'#ffcf9a':color;
+      ctx.fillStyle=core?'#251306':recalled.has(n.id)?'#ffe3ae':isSelected?'#ffcf9a':color;
       ctx.strokeStyle=core?'#ffcf9a':color;
       ctx.lineWidth=core?1.5:1;
       circle(n.x,n.y,size);ctx.fill();ctx.stroke();ctx.shadowBlur=0;
-      if(chat){ctx.globalAlpha=.35;ctx.strokeStyle=color;circle(n.x,n.y,12);ctx.stroke();ctx.globalAlpha=1;}
+      if(chat||cluster){ctx.globalAlpha=.35;ctx.strokeStyle=color;circle(n.x,n.y,12);ctx.stroke();ctx.globalAlpha=1;}
       if(isSelected){ctx.strokeStyle='#ffcf9a';ctx.lineWidth=1;circle(n.x,n.y,size+7);ctx.stroke();}
       if(core){
         ctx.strokeStyle='rgba(238,138,60,.35)';ctx.setLineDash([2,5]);circle(0,0,33);ctx.stroke();ctx.setLineDash([]);
@@ -198,7 +259,7 @@
           ctx.lineWidth=2;circle(0,0,37+(1-p)*20);ctx.stroke();
         }
       }
-      if(core||isSelected||(chat&&zoom>.85&&chatIds.length<=18)){
+      if(core||isSelected||cluster&&zoom>.55||(chat&&zoom>1.15&&nodes.length<280)){
         ctx.fillStyle=core?'#ffcf9a':'#bda893';
         ctx.textAlign='center';ctx.font=(core?'bold 10px':'9px')+' ui-monospace,Consolas,monospace';
         ctx.fillText(core?'KIYOMIRA':n.label.slice(0,16),n.x,n.y+size+15);
@@ -246,18 +307,43 @@
       if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId}}));
       request();
     }
-    pointer=null;
+    pointer=null;save();
   });
   canvas.addEventListener('pointercancel',()=>{pointer=null;});
-  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();},{passive:false});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();},{passive:false});
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
-  document.getElementById('brain-reset')?.addEventListener('click',()=>{pan={x:0,y:0};zoom=1;request();});
+  document.getElementById('brain-reset')?.addEventListener('click',()=>{pan={x:0,y:0};zoom=1;request();save();});
+  document.getElementById('brain-focus')?.addEventListener('click',()=>{
+    focus=!focus;document.body.classList.toggle('brain-focus',focus);
+    const button=document.getElementById('brain-focus');button.textContent=focus?'Выход':'Фокус';
+    button.setAttribute('aria-pressed',String(focus));resize();
+  });
+  try {
+    const saved=JSON.parse(localStorage.getItem('kiyomira.brain.camera')||'{}');
+    if(['circle','honeycomb','links'].includes(saved.mode))mode=saved.mode;
+    if(Number.isFinite(saved.zoom))zoom=clamp(saved.zoom,.4,3.5);
+    if(Number.isFinite(saved.x))pan.x=clamp(saved.x,-1200,1200);
+    if(Number.isFinite(saved.y))pan.y=clamp(saved.y,-1200,1200);
+  }catch{}
+  function eventActivity(event){
+    if(event.type==='контекст'){
+      recalled=new Set((event.sources||[]).map(x=>'m'+x));phaseChat=event.chatId;
+      live.textContent='ЧТЕНИЕ КОНТЕКСТА';request();
+    }else if(event.type==='генерация')setPhase('request');
+    else if(event.type==='сохранение'){setPhase('response');live.textContent='ЗАПИСЬ SQLITE';}
+    else if(event.type==='ответ')setPhase('response');
+    else if(event.type==='ошибка')setPhase('error');
+    if(event.chatId&&event.type==='контекст'){
+      const n=nodes.find(n=>n.kind==='chat'&&n.chatId===event.chatId);
+      if(n&&zoom>=.95&&!pointer){pan={x:-n.x*zoom,y:-n.y*zoom};request();}
+    }
+  }
   document.addEventListener('visibilitychange',()=>{visible=!document.hidden;if(visible)request();});
   motion.addEventListener?.('change',request);
   new ResizeObserver(resize).observe(host);
   window.KiyomiraBrain={
-    update,setPhase,
+    update,setPhase,eventActivity,
     setBusy(value){setPhase(value?'request':'idle');}
   };
-  resize();
+  setMode(mode);resize();
 })();

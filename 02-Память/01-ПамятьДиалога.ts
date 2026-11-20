@@ -146,6 +146,32 @@ export class ПамятьДиалога {
     this.база.prepare('INSERT INTO веб_настройки (ключ, значение) VALUES (?, ?) ON CONFLICT(ключ) DO UPDATE SET значение=excluded.значение').run(ключ, значение);
   }
 
+
+  // Read-only, bounded snapshots for the Canvas knowledge graph. Queries are
+  // ordered by persisted SQLite message IDs; no fabricated nodes or metadata.
+  картаДиалогов(лимит = 1000): {
+    диалоги: Диалог[];
+    сообщения: (Запись & { диалог_ид: number })[];
+    всегоСообщений: number;
+  } {
+    const безопасныйЛимит = Math.max(1, Math.min(1000, Math.trunc(лимит) || 1000));
+    const диалоги = this.списокДиалогов();
+    const сообщения = (this.база.prepare(
+      'SELECT ид, диалог_ид, роль, текст, время FROM сообщения WHERE диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT ?'
+    ).all(безопасныйЛимит) as (Запись & { диалог_ид: number })[]).reverse();
+    const всегоСообщений = Number((this.база.prepare(
+      'SELECT count(*) AS n FROM сообщения WHERE диалог_ид IS NOT NULL'
+    ).get() as { n: number }).n);
+    return { диалоги, сообщения, всегоСообщений };
+  }
+
+  источникиКонтекста(диалогИд?: number): number[] {
+    const rows = диалогИд === undefined
+      ? this.база.prepare('SELECT ид FROM сообщения ORDER BY ид DESC LIMIT ?').all(this.лимит)
+      : this.база.prepare('SELECT ид FROM сообщения WHERE диалог_ид=? ORDER BY ид DESC LIMIT ?').all(диалогИд, this.лимит);
+    return (rows as { ид: number }[]).map(row=>Number(row.ид)).reverse();
+  }
+
   размер(): number {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;

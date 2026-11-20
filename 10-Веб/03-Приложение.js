@@ -1,7 +1,7 @@
 'use strict';
 
 const el = id => document.getElementById(id);
-const state = { chats:[], selected:null, busy:false };
+const state = { chats:[], selected:null, busy:false, brainEventId:0, brainInitialized:false };
 const headers = { 'X-Kiyomira-Request':'1' };
 
 async function api(path, method='GET', data) {
@@ -89,7 +89,21 @@ function renderChats() {
   }
 }
 async function refreshBrain() {
-  try { window.KiyomiraBrain?.update(await api('/api/brain')); } catch(err) { console.warn('Карта памяти: '+err.message); }
+  try {
+    const snapshot=await api('/api/brain');
+    window.KiyomiraBrain?.update(snapshot);
+    if(!state.brainInitialized){state.brainEventId=snapshot.latest||0;state.brainInitialized=true;}
+  } catch(err) { console.warn('Карта памяти: '+err.message); }
+}
+async function pollBrainEvents() {
+  if(!state.brainInitialized||document.hidden)return;
+  const payload=await api('/api/brain/events?after='+state.brainEventId);
+  for(const event of payload.events||[]){
+    if(event.id<=state.brainEventId)continue;
+    state.brainEventId=event.id;
+    window.KiyomiraBrain?.eventActivity(event);
+  }
+  state.brainEventId=Math.max(state.brainEventId,payload.latest||0);
 }
 async function refreshChats() {
   state.chats=(await api('/api/chats')).chats;
@@ -141,6 +155,7 @@ async function sendMessage(ev) {
     for(const item of messages)message(item.роль,item.текст);
     window.KiyomiraBrain?.setPhase('response');
     if(!result.reply)notice('Пустой ответ модели');
+    await pollBrainEvents().catch(()=>{});
     await refreshChats();
   } catch(err) {
     window.KiyomiraBrain?.setPhase('error');
@@ -150,6 +165,7 @@ async function sendMessage(ev) {
     await updateStatus().catch(()=>{});
     if(!el('messages').children.length)emptyMessages();
   } finally {
+    await pollBrainEvents().catch(()=>{});
     buttonBusy(false);input.focus();
   }
 }
@@ -282,6 +298,7 @@ async function bootstrap() {
     if(!confirm('Завершить Kiyomira и закрыть веб-сервер?'))return;
     try{await api('/api/quit','POST',{});closeModal();notice('Kiyomira завершена. Можно закрыть вкладку.',true);}catch(err){notice(err.message);}
   });
+  window.setInterval(()=>{if(state.busy&&!document.hidden)void pollBrainEvents().catch(()=>{});},850);
   try {
     await updateStatus();await refreshChats();
     if(state.chats.length)await selectChat(state.chats[0].ид);else await newChat();

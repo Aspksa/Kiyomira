@@ -194,3 +194,15 @@ h1,h2,h3,p{margin:0}
   .brain-controls{gap:3px;padding:5px}
   .brain-controls button{padding:4px 7px;font-size:10px}
 }
+
+/* Focused cognition display: preserve the chat state while giving the brain room. */
+body.brain-focus .workspace{grid-template-columns:minmax(0,1fr)}
+body.brain-focus .chat-view{display:none}
+body.brain-focus .brain-panel{width:100%;border-right:0}
+body.brain-focus .brain-stage{min-height:0}
+body.brain-focus .brain-controls button#brain-focus{background:rgba(var(--accent-rgb),.20);color:var(--gold-bright)}
+@media(max-width:700px){
+ body.brain-focus .workspace .brain-panel{display:flex;flex:1}
+ body.brain-focus .workspace .chat-view{display:none}
+ .brain-controls{gap:3px}
+}
