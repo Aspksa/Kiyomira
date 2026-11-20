@@ -21,7 +21,8 @@
   let cameraTarget=null,hovered=null,sectorAngles=[];
   let memoryWaveAt=0,memoryWaveIds=new Set();
   let sourceRouteEdges=new Set(),routeUntil=0;
-  let renderStep=25,measuredFrames=0,lastDrawCost=0;
+  let renderStep=25,measuredFrames=0,lastDrawCost=0,avgDrawCost=0,frameRate=0,lastRenderedAt=0;
+  let zoomTarget=null,modeTransitionAt=0;
   let staticRingLayer=null,staticRingBuilds=0,semanticEdgeCount=0;
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
@@ -332,6 +333,7 @@
   }
   function setMode(next) {
     if(!['circle','honeycomb','links','timeline'].includes(next))return;
+    if(mode!==next)modeTransitionAt=now();
     mode=next;
     document.querySelectorAll('[data-brain-mode]').forEach(button=>{
       const on=button.dataset.brainMode===mode;
@@ -345,9 +347,10 @@
     if(output)output.textContent=zoomLevel();
   }
   function changeZoom(factor){
-    const next=clamp(zoom*factor,.4,3.5);
-    if(next===zoom)return;
-    zoom=next;syncZoom();request();save();
+    const next=clamp((zoomTarget??zoom)*factor,.4,3.5);
+    if(next===(zoomTarget??zoom))return;
+    zoomTarget=next;request();
+    if(motion.matches){zoom=next;zoomTarget=null;syncZoom();save();}
     window.KiyomiraUnity?.relayout();
   }
   function save(){
@@ -517,10 +520,18 @@
       ctx.beginPath();ctx.moveTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.stroke();ctx.setLineDash([]);
     }
     const detailZoom=zoom*fitScale();
+    // Viewport culling before expensive shadows, strokes and text labels.
+    const viewMargin=40/Math.max(detailZoom,.01);
+    const viewLeft=(-width/2-pan.x)/Math.max(detailZoom,.01)-viewMargin;
+    const viewRight=(width/2-pan.x)/Math.max(detailZoom,.01)+viewMargin;
+    const viewTop=(-height/2-pan.y)/Math.max(detailZoom,.01)-viewMargin;
+    const viewBottom=(height/2-pan.y)/Math.max(detailZoom,.01)+viewMargin;
+    const inView=n=>n.x>=viewLeft&&n.x<=viewRight&&n.y>=viewTop&&n.y<=viewBottom;
     const waveAge=time-memoryWaveAt;
     const waveActive=memoryWaveIds.size>0&&waveAge>=0&&waveAge<1500&&!motion.matches;
     for(const [a,b,relationType] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
+      if(!inView(from)&&!inView(to))continue;
       if(detailZoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
       const route=sourceRouteEdges.has(a+':'+b);
       const hot=route||recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
@@ -557,6 +568,7 @@
       ctx.globalAlpha=1;
     }
     for(const n of nodes){
+      if(!inView(n))continue;
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
       const faded=(hovered&&n.kind!=='core'&&n.group!==hovered.group)||
         (!hovered&&activeChat&&n.kind!=='core'&&n.chatId&&n.chatId!==activeChat);
@@ -597,8 +609,14 @@
     ctx.restore();
   }
   function interpolate(){
-    if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}if(cameraTarget){pan=cameraTarget;cameraTarget=null;}return false;}
+    if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}if(cameraTarget){pan=cameraTarget;cameraTarget=null;}if(zoomTarget!==null){zoom=zoomTarget;zoomTarget=null;syncZoom();}return false;}
     let moving=false;
+    if(zoomTarget!==null){
+      const diff=zoomTarget-zoom;
+      if(Math.abs(diff)>.003){zoom+=diff*.2;moving=true;}
+      else{zoom=zoomTarget;zoomTarget=null;save();}
+      syncZoom();
+    }
     if(cameraTarget){
       window.KiyomiraUnity?.relayout();
       const dx=cameraTarget.x-pan.x,dy=cameraTarget.y-pan.y;
@@ -619,6 +637,9 @@
     if(t-lastTick>=renderStep){
       const began=performance.now();draw(t);lastTick=t;
       lastDrawCost=performance.now()-began;measuredFrames++;
+      avgDrawCost=avgDrawCost?avgDrawCost*.9+lastDrawCost*.1:lastDrawCost;
+      if(lastRenderedAt>0){const instant=1000/Math.max(1,t-lastRenderedAt);frameRate=frameRate?frameRate*.9+instant*.1:instant;}
+      lastRenderedAt=t;
       if(measuredFrames%12===0){
         // Dynamic throttle: only lower FPS after consistently costly frames.
         renderStep=lastDrawCost>25?50:lastDrawCost>13||nodes.length>850?33:25;
@@ -745,7 +766,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,staticRingBuilds,semanticEdgeCount};},
+    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
