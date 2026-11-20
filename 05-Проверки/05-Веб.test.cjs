@@ -63,6 +63,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const emptyBrain=await request('/api/brain');
     assert.equal(emptyBrain.status,200);
     assert.deepEqual(emptyBrain.data.chats,[]);
+    assert.equal(emptyBrain.data.aggregateLimit,10000);
+    assert.equal(emptyBrain.data.sampledMessages,0);
     const chats=await request('/api/chats');
     assert.deepEqual(chats.data.chats,[]);
     const first=await request('/api/chats','POST',{title:'Главный чат'});
@@ -84,6 +86,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const brainAfter=await request('/api/brain');
     assert.equal(brainAfter.data.messages.some(m=>m.chatId===a&&m.preview.includes('Привет')),true);
     assert.equal(brainAfter.data.totalMessages,2);
+    assert.equal(brainAfter.data.sampledMessages,2);
+    assert.equal(Object.values(brainAfter.data.topicTotals).reduce((a,b)=>a+b,0),2);
     assert.equal(brainAfter.data.messages.every(m=>Number.isInteger(m.id)&&Array.isArray(m.topics)),true);
     const events=await request('/api/brain/events?after=0');
     assert.equal(events.status,200);
