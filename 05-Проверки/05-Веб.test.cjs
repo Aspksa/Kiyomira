@@ -40,7 +40,15 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(await appjs.text(),/markdown/);
     const brainAsset=await fetch(url('/04-Мозг.js'));
     assert.equal(brainAsset.status,200);
-    assert.match(await brainAsset.text(),/kiyomira-brain-select/);
+    const brainSource=await brainAsset.text();
+    assert.match(brainSource,/kiyomira-brain-select/);
+    assert.match(brainSource,/prefers-reduced-motion/);
+    assert.match(brainSource,/setPhase/);
+    assert.match(brainSource,/mode==='honeycomb'/);
+    assert.match(brainSource,/if\(active&&!motion.matches&&edges.length\)/);
+    const cssAsset=await fetch(url('/02-Стиль.css'));
+    assert.equal(cssAsset.status,200);
+    assert.match(await cssAsset.text(),/Compact visualization controls/);
     const emptyBrain=await request('/api/brain');
     assert.equal(emptyBrain.status,200);
     assert.deepEqual(emptyBrain.data.chats,[]);
