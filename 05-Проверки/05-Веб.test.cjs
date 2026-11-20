@@ -145,3 +145,86 @@ test('миграция существующей CLI истории в первы
     } finally{reopened.закрыть();}
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+
+test('Canvas brain executes in a browser-like runtime with SQLite data and interactive modes', () => {
+  const vm = require('node:vm');
+  const {readFileSync} = require('node:fs');
+  const file = require('node:path').resolve(__dirname,'../10-Веб/04-Мозг.js');
+  const source=readFileSync(file,'utf8');
+  let now=1000,frames=[],clicks={},labelText={},saved={};
+  const gradient={addColorStop(){}};
+  const canvasContext={
+    clearRect(){},fillRect(){},save(){},restore(){},translate(){},scale(){},
+    beginPath(){},arc(){},stroke(){},fill(){},moveTo(){},lineTo(){},
+    setTransform(){},createRadialGradient(){return gradient;},closePath(){},
+    setLineDash(){},fillText(){}
+  };
+  const canvas={
+    parentElement:{getBoundingClientRect(){return {width:800,height:590};}},
+    getContext(){return canvasContext;},
+    getBoundingClientRect(){return {left:0,top:0,width:800,height:590};},
+    addEventListener(name,cb){clicks['canvas:'+name]=cb;},
+    setPointerCapture(){}
+  };
+  const elements=new Map([['brain-canvas',canvas]]);
+  for(const key of ['brain-detail','brain-count','brain-live','brain-reset','brain-focus']){
+    elements.set(key,{
+      textContent:'',classList:{toggle(){}},setAttribute(){},
+      addEventListener(type,cb){clicks[key+':'+type]=cb;}
+    });
+  }
+  const modes=['circle','honeycomb','links'].map(key=>({
+    dataset:{brainMode:key},classList:{toggle(){}},setAttribute(){},
+    addEventListener(type,cb){clicks['mode:'+key+':'+type]=cb;}
+  }));
+  const document={
+    hidden:false,getElementById(id){return elements.get(id)||null;},
+    querySelectorAll(){return modes;},addEventListener(){},
+    body:{classList:{toggle(){}}}
+  };
+  const localStorage={getItem(key){return saved[key]||null;},setItem(key,v){saved[key]=v;}};
+  const window={
+    devicePixelRatio:1,localStorage,
+    matchMedia(){return {matches:false,addEventListener(){}};},
+    addEventListener(){},dispatchEvent(){}
+  };
+  const context={
+    window,document,localStorage,
+    performance:{now(){return now;}},
+    requestAnimationFrame(cb){frames.push(cb);return frames.length;},
+    ResizeObserver:class{observe(){}},
+    CustomEvent:class{constructor(type,details){this.type=type;this.detail=details.detail;}},
+    console
+  };
+  vm.runInNewContext(source,context,{timeout:1500});
+  assert.equal(typeof window.KiyomiraBrain?.update,'function');
+  const graph={
+    chats:[{id:1,title:'Главный чат',count:3}],
+    messages:[
+      {id:101,chatId:1,role:'пользователь',preview:'Проект Kiyomira',topics:['проекты']},
+      {id:102,chatId:1,role:'ассистент',preview:'Ответ',topics:['общее']},
+      {id:103,chatId:1,role:'пользователь',preview:'Версия: 2',topics:['проекты']}
+    ],
+    candidates:[{a:101,b:103,тип:'требует проверки'}],totalMessages:3
+  };
+  // These are runtime checks, not mere syntax or string-match assertions.
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(graph));
+  assert.match(elements.get('brain-count').textContent,/3 сообщений/);
+  assert.doesNotThrow(()=>clicks['mode:honeycomb:click']());
+  assert.doesNotThrow(()=>clicks['mode:links:click']());
+  assert.doesNotThrow(()=>clicks['mode:circle:click']());
+  assert.doesNotThrow(()=>window.KiyomiraBrain.eventActivity({
+    type:'контекст',chatId:1,sources:[101,103]
+  }));
+  assert.doesNotThrow(()=>window.KiyomiraBrain.setPhase('request'));
+  // Draw several actual Canvas frames, including active graph edges.
+  for(let i=0;i<7;i++){
+    now+=80;const pending=frames;frames=[];
+    for(const cb of pending.slice(0,10))assert.doesNotThrow(()=>cb(now));
+  }
+  assert.doesNotThrow(()=>window.KiyomiraBrain.setPhase('response'));
+  assert.doesNotThrow(()=>clicks['brain-focus:click']());
+  assert.doesNotThrow(()=>clicks['brain-reset:click']());
+  assert.match(saved['kiyomira.brain.camera']||'',/circle/);
+});
