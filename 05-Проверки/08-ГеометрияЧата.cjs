@@ -97,6 +97,31 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         'long history must scroll '+width+'x'+height+JSON.stringify(history));
       assert.equal(send.display,'grid');
       assert.notEqual(send.visibility,'hidden');
+      const spatial=await evaluate(`(()=>{
+        const brain=window.KiyomiraBrain;
+        const timeline=document.querySelector('[data-brain-mode="timeline"]');
+        const circle=document.querySelector('[data-brain-mode="circle"]');
+        const zin=document.getElementById('brain-zoom-in');
+        const zout=document.getElementById('brain-zoom-out');
+        const label=document.getElementById('brain-zoom-level');
+        if(!brain||!timeline||!circle||!zin||!zout||!label)
+          return {error:'Missing spatial controls'};
+        const initial=brain.getViewportStats();
+        timeline.click();const inTime=brain.getViewportStats();
+        zin.click();zin.click();const close=brain.getViewportStats();
+        zout.click();const restored=brain.getViewportStats();
+        circle.click();
+        return {initial,inTime,close,restored,final:brain.getViewportStats(),
+          label:label.textContent,keyboard:zin.getAttribute('aria-label')};
+      })()`);
+      assert.ok(!spatial.error,JSON.stringify(spatial));
+      assert.equal(spatial.inTime.mode,'timeline');
+      assert.ok(spatial.close.zoom>spatial.inTime.zoom,'zoom in must increase detail');
+      assert.ok(spatial.restored.zoom<spatial.close.zoom,'zoom out must decrease detail');
+      assert.equal(spatial.final.mode,'circle');
+      assert.ok(spatial.keyboard&&spatial.keyboard.length>2,'zoom must remain accessible');
+      assert.ok([25,33,50].includes(spatial.final.renderStep),'frame pacing must be bounded');
+
       const balance=await evaluate(`(()=>{
         const manager=window.KiyomiraLayout,brain=window.KiyomiraBrain;
         const auto=document.getElementById('brain-auto-layout');

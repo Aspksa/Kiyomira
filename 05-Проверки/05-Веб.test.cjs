@@ -24,6 +24,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(html,/id="workspace-divider"/);
     assert.match(html,/unified-workspace/);
     assert.match(html,/id="brain-auto-layout"/);
+    assert.match(html,/data-brain-mode="timeline"/);
+    assert.match(html,/id="brain-zoom-in"/);
+    assert.match(html,/id="brain-zoom-out"/);
     assert.match(html,/id="cognitive-flow"/);
     assert.match(html,/id="cognitive-flow-path"/);
     assert.match(html,/aria-orientation="vertical"/);
@@ -324,11 +327,19 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   const indexed={...graph,documents:[{ид:44,название:'architecture.md',проект:'Kiyomira'}]};
   assert.doesNotThrow(()=>window.KiyomiraBrain.update(indexed));
   assert.doesNotThrow(()=>window.KiyomiraBrain.update(indexed));
+  assert.doesNotThrow(()=>window.KiyomiraBrain.setMode('timeline'));
+  assert.equal(window.KiyomiraBrain.getViewportStats().mode,'timeline');
+  assert.doesNotThrow(()=>window.KiyomiraBrain.showAnswerRoute([101],1));
+  assert.ok(window.KiyomiraBrain.getViewportStats().routeEdges>=2,
+    'only actual graph edges may form answer provenance');
+  assert.doesNotThrow(()=>window.KiyomiraBrain.setMode('circle'));
   assert.match(elements.get('brain-count').textContent,/3 сообщений/);
   assert.match(source,/Weighted stable radial sectors/);
   assert.match(source,/sectorAngles/);
   assert.match(source,/memoryWaveIds/);
   assert.match(source,/Outer TRACKTOR categorical rim/);
+  assert.match(source,/SQLite insertion chronology/);
+  assert.match(source,/Dynamic throttle/);
   // Many persisted messages may fill one sector without leaking outside the ring.
   const denseGraph={
     chats:[{id:2,title:'Проекты',count:120}],

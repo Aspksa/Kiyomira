@@ -66,8 +66,8 @@ function message(role,text,temporary=false,record=null) {
   if(role==='ассистент'&&Array.isArray(record?.sources)&&record.sources.length){
     const sourceButton=document.createElement('button');
     sourceButton.type='button';sourceButton.className='message-sources';
-    sourceButton.textContent='В памяти · '+record.sources.length+' источников';
-    sourceButton.title='Показать использованные сообщения в мозге';
+    sourceButton.textContent='Маршрут ответа · '+record.sources.length+' источников';
+    sourceButton.title='Показать маршрут к использованным сообщениям SQLite';
     sourceButton.addEventListener('click',()=>{
       window.KiyomiraBrain?.focusSources(record.sources,record.диалог_ид||state.selected);
       article.classList.add('source-active');

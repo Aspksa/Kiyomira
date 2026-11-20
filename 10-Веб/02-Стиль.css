@@ -540,3 +540,39 @@ html,body{height:100%;overflow:hidden}
   .unified-workspace .messages{scroll-behavior:auto}
   .unified-workspace #send{transition:none}
 }
+
+/* Kiyomira 8 · spatial modes, readable zoom levels, quality guardrails. */
+.unified-workspace .brain-zoom-level{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:64px;padding:4px 7px;font-size:.68rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.03em;
+  color:#a7d4cb;border:1px solid rgba(100,177,168,.20);
+  border-radius:3px;background:rgba(4,25,31,.4);
+}
+.unified-workspace #brain-zoom-in,
+.unified-workspace #brain-zoom-out{
+  min-width:33px;min-height:33px;
+  padding:4px 8px;font-size:1rem;
+  color:#b0d8d1;
+}
+.unified-workspace .brain-controls{flex:0 0 auto;min-height:44px}
+.unified-workspace .brain-footer{flex:0 0 auto;min-height:32px}
+.unified-workspace .brain-stage{flex:1 1 0;min-height:0}
+.unified-workspace .brain-stage canvas{outline-offset:-3px}
+.unified-workspace button:focus-visible,
+.unified-workspace [role="separator"]:focus-visible{
+  outline:2px solid #b1e3d6;outline-offset:2px;
+}
+@media(max-width:1000px){
+  .unified-workspace .brain-controls{gap:4px;padding:7px 5px}
+  .unified-workspace .brain-controls button{padding:6px 7px;font-size:.69rem}
+  .unified-workspace .brain-zoom-level{min-width:58px}
+}
+@media(max-width:700px){
+  .unified-workspace .brain-stage{min-height:0}
+  .unified-workspace .brain-controls{max-height:108px;overflow-y:auto}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .brain-stage,
+  .unified-workspace .brain-controls{scroll-behavior:auto}
+}
