@@ -19,7 +19,10 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(app.url,/^http:\/\/127\.0\.0\.1:\d+$/);
     const front=await fetch(app.url+'/');
     assert.equal(front.status,200);
-    assert.match(await front.text(),/Kiyomira — когнитивная система/);
+    const html=await front.text();
+    assert.match(html,/Kiyomira — когнитивная система/);
+    assert.match(html,/id="workspace-divider"/);
+    assert.match(html,/aria-orientation="vertical"/);
     assert.match(front.headers.get('content-security-policy'),/default-src 'self'/);
     const cookie=front.headers.get('set-cookie').split(';')[0];
     const url=path=>app.url+path;
@@ -37,7 +40,10 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(crossHeader.status,403);
     const appjs=await fetch(url('/03-Приложение.js'));
     assert.equal(appjs.status,200);
-    assert.match(await appjs.text(),/markdown/);
+    const appSource=await appjs.text();
+    assert.match(appSource,/markdown/);
+    assert.match(appSource,/initWorkspaceDivider/);
+    assert.match(appSource,/kiyomira.workspace.chatPercent/);
     const brainAsset=await fetch(url('/04-Мозг.js'));
     assert.equal(brainAsset.status,200);
     const brainSource=await brainAsset.text();
@@ -50,7 +56,10 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/if\(active&&!motion.matches&&edges.length\)/);
     const cssAsset=await fetch(url('/02-Стиль.css'));
     assert.equal(cssAsset.status,200);
-    assert.match(await cssAsset.text(),/Compact visualization controls/);
+    const css=await cssAsset.text();
+    assert.match(css,/Compact visualization controls/);
+    assert.match(css,/--chat-percent/);
+    assert.match(css,/workspace-divider/);
     const emptyBrain=await request('/api/brain');
     assert.equal(emptyBrain.status,200);
     assert.deepEqual(emptyBrain.data.chats,[]);
