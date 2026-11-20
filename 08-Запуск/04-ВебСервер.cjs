@@ -51,14 +51,27 @@ async function создатьВебСервер({ корень = resolve(__dirna
   const база = new ПамятьДиалога(200, process.env.KIYOMIRA_DB_PATH || join(корень, '06-Данные', 'память.sqlite'));
   let ключ = process.env.CLOUD_RU_API_KEY || '';
   let модель = process.env.CLOUD_RU_MODEL || база.настройка('модель') || '';
+  let демоРежим = false;
+  let проверено = false;
+  let последняяОшибка = '';
   let закрывается = false;
   const активные = new Map();
   const ожидают = new Set();
   const демонстрация = new ТестоваяМодель();
   const провайдер = {
     async создатьОтвет(история, сигнал) {
-      if (ключ && модель) return new ОблачнаяМодель(ключ, модель).создатьОтвет(история, сигнал);
-      return демонстрация.создатьОтвет(история);
+      if (демоРежим) return демонстрация.создатьОтвет(история);
+      if (!ключ || !модель) throw ошибка('Cloud.ru не настроен: укажите API-ключ и модель в настройках', 409);
+      try {
+        const result = await new ОблачнаяМодель(ключ, модель).создатьОтвет(история, сигнал);
+        последняяОшибка = '';
+        проверено = true;
+        return result;
+      } catch (err) {
+        последняяОшибка = err instanceof Error ? err.message : 'Сбой запроса Cloud.ru';
+        проверено = false;
+        throw err;
+      }
     }
   };
   const ядро = new Ядро(провайдер, база);
@@ -96,7 +109,7 @@ async function создатьВебСервер({ корень = resolve(__dirna
           запрос.headers['x-kiyomira-request'] !== '1') throw ошибка('Нет доступа к API',403);
       if (!['GET','POST','PATCH','DELETE'].includes(запрос.method)) throw ошибка('Метод не поддерживается',405);
       if (запрос.method === 'GET' && путь === '/api/status') {
-        return json(ответ,200,{ ready:true, provider:ключ && модель ? 'cloud':'demo', model:модель, keyPresent:!!ключ, active:активные.size });
+        return json(ответ,200,{ ready:true, provider:демоРежим ? 'demo' : ключ && модель ? 'cloud' : 'unconfigured', model:модель, keyPresent:!!ключ, verified:проверено, lastError:последняяОшибка, active:активные.size });
       }
       if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
       if (запрос.method === 'POST' && путь === '/api/chats') {
@@ -108,11 +121,15 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{ results:база.поиск(url.searchParams.get('q') || '') });
       }
       if (запрос.method === 'GET' && путь === '/api/settings') {
-        return json(ответ,200,{ model:модель, keyPresent:!!ключ, secretStored:false });
+        return json(ответ,200,{ model:модель, keyPresent:!!ключ, demoMode:демоРежим, verified:проверено, secretStored:false });
       }
       if (запрос.method === 'POST' && путь === '/api/settings') {
         const данные = await телоЗапроса(запрос);
         if (активные.size) throw ошибка('Нельзя менять модель во время генерации',409);
+        if (данные.demoMode !== undefined) {
+          if (typeof данные.demoMode !== 'boolean') throw ошибка('Неверное значение демо-режима');
+          демоРежим = данные.demoMode;
+        }
         if (данные.model !== undefined) {
           if (typeof данные.model !== 'string' || данные.model.length > 200) throw ошибка('Некорректная модель');
           модель = данные.model.trim();
@@ -123,17 +140,23 @@ async function создатьВебСервер({ корень = resolve(__dirna
           if (данные.apiKey.trim()) ключ = данные.apiKey.trim();
         }
         if (данные.clearKey === true) ключ = '';
-        return json(ответ,200,{ model:модель, keyPresent:!!ключ, secretStored:false });
+        проверено = false;
+        последняяОшибка = '';
+        return json(ответ,200,{ model:модель, keyPresent:!!ключ, demoMode:демоРежим, verified:проверено, secretStored:false });
       }
       if (запрос.method === 'GET' && путь === '/api/models') {
         if (!ключ) throw ошибка('Сначала укажите API-ключ Cloud.ru');
         const models = await new ОблачнаяМодель(ключ, модель || 'проверка').получитьМодели();
+        последняяОшибка = '';
         return json(ответ,200,{ models });
       }
       if (запрос.method === 'POST' && путь === '/api/test') {
         if (!ключ || !модель) throw ошибка('Укажите ключ и модель Cloud.ru');
         const models = await new ОблачнаяМодель(ключ, модель).получитьМодели();
-        return json(ответ,200,{ ok:true, model:модель, listed:models.includes(модель) });
+        const listed = models.includes(модель);
+        проверено = listed;
+        последняяОшибка = listed ? '' : 'Выбранная модель отсутствует в списке Cloud.ru';
+        return json(ответ,200,{ ok:listed, model:модель, listed, check:'models-only' });
       }
       const chat = idИзПути(путь);
       if (chat) {
@@ -179,9 +202,10 @@ async function создатьВебСервер({ корень = resolve(__dirna
       }
       throw ошибка('API не найден',404);
     } catch (e) {
-      const status = Number.isInteger(e?.httpStatus) ? e.httpStatus : e?.name === 'AbortError' ? 409 : 500;
-      // Never send potentially secret-bearing raw network exceptions to browser or logs.
-      const message = status === 500 ? 'Операция не выполнена; проверьте настройки и подключение' : String(e.message);
+      const cloudError = e instanceof Error && (e.message.startsWith('Cloud.ru ') || e.message.startsWith('Запрос Cloud.ru '));
+      const status = Number.isInteger(e?.httpStatus) ? e.httpStatus : cloudError ? 502 : e?.name === 'AbortError' ? 409 : 500;
+      // Cloud errors are server-authored and sanitized, never upstream raw response bodies.
+      const message = cloudError || status !== 500 ? String(e.message) : 'Операция не выполнена; проверьте настройки и подключение';
       if (!ответ.headersSent) json(ответ,status,{error:message});
       else ответ.end();
     }
