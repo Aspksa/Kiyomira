@@ -15,6 +15,25 @@ export class ПамятьДиалога {
   private readonly база: DatabaseSync;
   private readonly вставить;
   private readonly вставитьВДиалог;
+  private ftsReady=false;
+  private revision=0;
+  private readonly searchCache=new Map<string,{revision:number;rows:ReturnType<ПамятьДиалога['поискГибридный']>}>();
+  private readonly graphCache=new Map<string,{revision:number;value:unknown}>();
+  private readonly timings=new Map<string,{samples:number;total:number;max:number}>();
+  private recordTime(label:string,start:number){
+    const ms=performance.now()-start,old=this.timings.get(label)||{samples:0,total:0,max:0};
+    this.timings.set(label,{samples:old.samples+1,total:old.total+ms,max:Math.max(old.max,ms)});
+  }
+  профильПоиска(){
+    return Object.fromEntries([...this.timings].map(([k,v])=>[k,{
+      samples:v.samples,averageMs:Math.round(v.total/Math.max(1,v.samples)*100)/100,maxMs:Math.round(v.max*100)/100
+    }]));
+  }
+  private invalidate(){
+    this.revision++;
+    this.searchCache.clear();
+    this.graphCache.clear();
+  }
 
   constructor(private readonly лимит = 200, путь = ':memory:') {
     if (!Number.isSafeInteger(лимит) || лимит <= 0) throw new Error('Неверный лимит памяти');
@@ -40,6 +59,23 @@ export class ПамятьДиалога {
       this.база.exec('ALTER TABLE сообщения ADD COLUMN диалог_ид INTEGER');
     }
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_сообщения_диалог ON сообщения(диалог_ид, ид)');
+    // FTS5 is optional: older SQLite builds use the existing bounded ranking.
+    try{
+      const exists=this.база.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='сообщения_fts'").get();
+      this.база.exec("CREATE VIRTUAL TABLE IF NOT EXISTS сообщения_fts USING fts5(текст, content='сообщения', content_rowid='ид', tokenize='unicode61')");
+      this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_fts_message_insert AFTER INSERT ON сообщения BEGIN
+        INSERT INTO сообщения_fts(rowid,текст) VALUES(new.ид,new.текст);
+      END`);
+      this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_fts_message_delete AFTER DELETE ON сообщения BEGIN
+        INSERT INTO сообщения_fts(сообщения_fts,rowid,текст) VALUES('delete',old.ид,old.текст);
+      END`);
+      this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_fts_message_update AFTER UPDATE OF текст ON сообщения BEGIN
+        INSERT INTO сообщения_fts(сообщения_fts,rowid,текст) VALUES('delete',old.ид,old.текст);
+        INSERT INTO сообщения_fts(rowid,текст) VALUES(new.ид,new.текст);
+      END`);
+      if(!exists)this.база.exec("INSERT INTO сообщения_fts(сообщения_fts) VALUES('rebuild')");
+      this.ftsReady=true;
+    }catch{this.ftsReady=false;}
     // Source links belong to the completed assistant message; not speculative
     // model citations. Every ID is resolved from an actual SQLite row.
     this.база.exec(`CREATE TABLE IF NOT EXISTS источники_ответов (
@@ -72,6 +108,8 @@ export class ПамятьДиалога {
       UNIQUE(источник_ид,ключ,значение)
     )`);
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_ключ ON факты_кандидаты(ключ, диалог_ид)');
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_статус_ключ ON факты_кандидаты(статус,ключ,ид)');
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_статус_значение ON факты_кандидаты(статус,значение,ид)');
     this.база.exec(`CREATE TABLE IF NOT EXISTS векторные_индексы (
       сообщение_ид INTEGER PRIMARY KEY,
       модель TEXT NOT NULL,
@@ -115,6 +153,7 @@ export class ПамятьДиалога {
         this.база.exec('UPDATE сообщения SET диалог_ид = 1 WHERE диалог_ид IS NULL');
       }
       this.база.exec('COMMIT');
+      this.invalidate();
     } catch (ошибка) {
       this.база.exec('ROLLBACK');
       throw ошибка;
@@ -126,6 +165,7 @@ export class ПамятьДиалога {
   добавить(роль: Роль, текст: string): void {
     if (!текст.trim()) throw new Error('Нельзя сохранить пустое сообщение');
     this.вставить.run(роль, текст);
+    this.invalidate();
   }
 
   добавитьПару(запрос: string, ответ: string, диалогИд?: number, источники:number[]=[]): void {
