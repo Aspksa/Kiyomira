@@ -356,3 +356,25 @@ test('Фоновая очередь памяти восстанавливает 
     second.закрыть();
   }finally{rmSync(folder,{recursive:true,force:true});}
 });
+
+
+test('Восемь видов памяти, группировка подтверждений и контроль конфликтов',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Виды');
+    memory.добавитьПару('Проект: Kiyomira. Я решил использовать SQLite. Вчера исправил ошибку.',
+      'Сохранено',chat);
+    const typed=memory.видыПамяти();
+    assert.ok(typed.some(x=>x.тип==='проектная'));
+    assert.ok(typed.some(x=>x.тип==='решения'));
+    assert.ok(typed.some(x=>x.тип==='ошибки'));
+    const facts=memory.кандидатыФактов();
+    for(const fact of facts)memory.изменитьФакт(fact.ид,'подтверждено');
+    const summaries=memory.сводкиПодтверждённойПамяти();
+    assert.ok(summaries.every(x=>x.источники.length>0&&x.факты.length>0));
+    assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+    memory.удалитьДиалог(chat);
+    assert.deepEqual(memory.видыПамяти(),[]);
+    assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+  }finally{memory.закрыть();}
+});
