@@ -23,6 +23,8 @@
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
+  // Fit the 303-unit outer ring inside both narrow and short graph viewports.
+  const fitScale=()=>Math.min(1,Math.max(.18,(Math.min(width,height)-28)/626));
 
   function polar(a,r){return{x:Math.cos(a)*r,y:Math.sin(a)*r};}
   function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);}
@@ -326,7 +328,7 @@
     ambience.addColorStop(0,'rgba(238,138,60,.06)');ambience.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=ambience;ctx.fillRect(0,0,width,height);
     ctx.save();
-    ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom,zoom);
+    ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom*fitScale(),zoom*fitScale());
     const glow=ctx.createRadialGradient(0,0,5,0,0,300);
     glow.addColorStop(0,'rgba(238,138,60,.12)');glow.addColorStop(.55,'rgba(238,138,60,.035)');glow.addColorStop(1,'rgba(238,138,60,0)');
     ctx.fillStyle=glow;circle(0,0,300);ctx.fill();
@@ -389,9 +391,10 @@
       ctx.strokeStyle='rgba(224,92,75,.52)';ctx.lineWidth=1;ctx.setLineDash([3,5]);
       ctx.beginPath();ctx.moveTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.stroke();ctx.setLineDash([]);
     }
+    const detailZoom=zoom*fitScale();
     for(const [a,b,relationType] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
-      if(zoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
+      if(detailZoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
       const hot=recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=hot?1.35:.7;
       ctx.strokeStyle=hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
@@ -415,9 +418,9 @@
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
       const faded=(hovered&&n.kind!=='core'&&n.group!==hovered.group)||
         (!hovered&&activeChat&&n.kind!=='core'&&n.chatId&&n.chatId!==activeChat);
+      if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&detailZoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
+      if(chat&&nodes.length>600&&detailZoom<.55&&!isSelected)continue;
       if(faded)ctx.globalAlpha=.23;
-      if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
-      if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
       const size=core?22:cluster?12:chat?6.8:n.kind==='project'?9:n.kind==='document'?5:n.kind==='fact'?4:2.7;
       const color=core?'#ee8a3c':n.kind==='document'?'#7fb6a2':n.kind==='project'?'#ceb489':n.kind==='fact'?(n.status==='подтверждено'?'#80b6a1':n.status==='отклонено'?'#66544a':'#d7b17c'):palette[Math.abs(n.group||0)%palette.length];
       ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
@@ -475,7 +478,8 @@
   }
   function coord(ev){const b=canvas.getBoundingClientRect();return{x:ev.clientX-b.left,y:ev.clientY-b.top};}
   function nearest(p){
-    const x=(p.x-width/2-pan.x)/zoom,y=(p.y-height/2-pan.y)/zoom;
+    const scale=zoom*fitScale();
+    const x=(p.x-width/2-pan.x)/scale,y=(p.y-height/2-pan.y)/scale;
     let best=null,dist=Infinity;
     for(const n of nodes){const d=(x-n.x)**2+(y-n.y)**2;const radius=n.kind==='core'?30:n.kind==='chat'?18:12;if(d<radius**2&&d<dist){dist=d;best=n;}}
     return best;
@@ -490,6 +494,7 @@
   });
   canvas.addEventListener('pointerup',e=>{
     if(!moved){
+      window.dispatchEvent(new CustomEvent('kiyomira-brain-interaction'));
       const n=nearest(coord(e));selected=n;
       info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.kind==='fact'?'Кандидат факта · источник #'+n.sourceId+' · требует проверки: '+n.label:n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
       if(n?.documentId)window.dispatchEvent(new CustomEvent('kiyomira-brain-document',{detail:{documentId:n.documentId}}));
@@ -525,7 +530,7 @@
     else if(event.type==='ошибка')setPhase('error');
     if(event.chatId&&event.type==='контекст'){
       const n=nodes.find(n=>n.kind==='chat'&&n.chatId===event.chatId);
-      if(n&&zoom>=.95&&!pointer){cameraTarget={x:-n.x*zoom,y:-n.y*zoom};request();}
+      if(n&&zoom>=.95&&!pointer){cameraTarget={x:-n.x*zoom*fitScale(),y:-n.y*zoom*fitScale()};request();}
     }
   }
   document.addEventListener('visibilitychange',()=>{visible=!document.hidden;if(visible)request();});
@@ -538,7 +543,7 @@
       activeChat=chatId||null;
       const node=nodes.find(n=>recalled.has(n.id));
       if(node&&zoom>=.8&&!pointer){
-        cameraTarget={x:-node.x*zoom,y:-node.y*zoom};
+        cameraTarget={x:-node.x*zoom*fitScale(),y:-node.y*zoom*fitScale()};
       }
       flashUntil=now()+1600;request();
     },
@@ -547,6 +552,7 @@
       request();
     },
     getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
+    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   setMode(mode);resize();
