@@ -41,6 +41,7 @@ input::placeholder,textarea::placeholder{color:#766b5c}
 .rail-group{display:flex;flex-direction:column;align-items:center;gap:clamp(6px,.4vw,14px)}
 .rail-bottom{margin-top:auto;padding-top:clamp(8px,1.5vh,20px);border-top:1px solid var(--line);width:62%}
 .rail button{position:relative;display:grid;place-items:center;width:calc(var(--rail) * .62);aspect-ratio:1;padding:0;border:1px solid transparent;background:transparent;color:var(--muted);font-size:calc(var(--rail) * .31)}
+.rail button .icon{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .rail button:hover,.rail button.active{color:var(--gold-bright);border-color:var(--line-strong);background:linear-gradient(180deg,rgba(var(--accent-rgb),.16),rgba(var(--accent-rgb),.04))}
 .rail button.active::before{content:"";position:absolute;left:calc(var(--rail) * -.19 - 1px);top:22%;bottom:22%;width:3px;background:var(--gold);box-shadow:0 0 10px var(--gold)}
 .rail button::after{content:attr(data-tip);position:absolute;left:calc(100% + 14px);top:50%;transform:translate(-4px,-50%);opacity:0;pointer-events:none;white-space:nowrap;font-size:.85rem;padding:.4em .75em;background:var(--surface-3);color:var(--gold-bright);border:1px solid var(--line-strong);transition:opacity .15s,transform .15s;z-index:50}
