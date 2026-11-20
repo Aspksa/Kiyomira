@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { явноеУтверждение } from './02-КартаЗнаний.ts';
+import { ранжировать } from './04-ГибридныйПоиск.ts';
 
 export type Роль = 'пользователь' | 'ассистент';
 export type Сообщение = Readonly<{ роль: Роль; текст: string }>;
@@ -38,6 +40,25 @@ export class ПамятьДиалога {
     }
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_сообщения_диалог ON сообщения(диалог_ид, ид)');
     this.база.exec('CREATE TABLE IF NOT EXISTS веб_настройки (ключ TEXT PRIMARY KEY, значение TEXT NOT NULL)');
+    this.база.exec(`CREATE TABLE IF NOT EXISTS факты_кандидаты (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      источник_ид INTEGER NOT NULL,
+      диалог_ид INTEGER NOT NULL,
+      ключ TEXT NOT NULL,
+      значение TEXT NOT NULL,
+      статус TEXT NOT NULL DEFAULT 'требует проверки',
+      создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(источник_ид,ключ,значение)
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_ключ ON факты_кандидаты(ключ, диалог_ид)');
+    // Non-destructive bounded recovery of older user-authored key:value statements.
+    const known=(this.база.prepare('SELECT count(*) AS n FROM факты_кандидаты').get() as {n:number}).n;
+    if(!known){
+      const recent=this.база.prepare(
+        "SELECT ид, диалог_ид, текст FROM сообщения WHERE роль='пользователь' AND диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 2000"
+      ).all() as {ид:number;диалог_ид:number;текст:string}[];
+      for(const row of recent)this.индексироватьФакт(row.ид,row.диалог_ид,row.текст);
+    }
     this.база.exec('BEGIN IMMEDIATE');
     try {
       const старых = this.база.prepare('SELECT count(*) AS n FROM сообщения WHERE диалог_ид IS NULL').get() as { n: number };
@@ -68,7 +89,8 @@ export class ПамятьДиалога {
         this.вставить.run('пользователь', запрос);
         this.вставить.run('ассистент', ответ);
       } else {
-        this.вставитьВДиалог.run('пользователь', запрос, диалогИд);
+        const записьПользователя=this.вставитьВДиалог.run('пользователь', запрос, диалогИд);
+        this.индексироватьФакт(Number(записьПользователя.lastInsertRowid),диалогИд,запрос);
         this.вставитьВДиалог.run('ассистент', ответ, диалогИд);
         this.база.prepare('UPDATE диалоги SET обновлено=CURRENT_TIMESTAMP WHERE ид=?').run(диалогИд);
       }
@@ -119,6 +141,7 @@ export class ПамятьДиалога {
     if (!this.существуетДиалог(ид)) throw new Error('Диалог не найден');
     this.база.exec('BEGIN IMMEDIATE');
     try {
+      this.база.prepare('DELETE FROM факты_кандидаты WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM сообщения WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM диалоги WHERE ид=?').run(ид);
       this.база.exec('COMMIT');
@@ -172,10 +195,62 @@ export class ПамятьДиалога {
     return (rows as { ид: number }[]).map(row=>Number(row.ид)).reverse();
   }
 
+  private индексироватьФакт(источникИд:number,диалогИд:number,текст:string):void{
+    const fact=явноеУтверждение(текст);
+    if(!fact)return;
+    this.база.prepare(
+      'INSERT OR IGNORE INTO факты_кандидаты(источник_ид,диалог_ид,ключ,значение) VALUES(?,?,?,?)'
+    ).run(источникИд,диалогИд,fact.ключ,fact.значение);
+  }
+
+  кандидатыФактов(лимит=200){
+    return this.база.prepare(
+      'SELECT ид, источник_ид, диалог_ид, ключ, значение, статус, создано FROM факты_кандидаты ORDER BY ид DESC LIMIT ?'
+    ).all(Math.max(1,Math.min(500,лимит)));
+  }
+
+  // Same-key links have explicit sources, but do not imply that either value is true.
+  связиФактов(лимит=200){
+    return this.база.prepare(`
+      SELECT a.ид AS a,b.ид AS b,a.ключ AS отношение
+      FROM факты_кандидаты a JOIN факты_кандидаты b
+      ON a.ключ=b.ключ AND a.ид<b.ид
+      ORDER BY b.ид DESC LIMIT ?`).all(Math.max(1,Math.min(500,лимит)));
+  }
+
+  поискГибридный(запрос:string,лимит=8){
+    const records=this.база.prepare(`
+      SELECT ид, диалог_ид, роль, текст, время
+      FROM сообщения WHERE диалог_ид IS NOT NULL ORDER BY ид DESC LIMIT 5000
+    `).all() as {ид:number;диалог_ид:number;роль:Роль;текст:string;время:string}[];
+    return ранжировать(запрос,records.reverse(),лимит).map(row=>({
+      ид:row.ид,диалог_ид:row.диалог_ид,роль:row.роль,
+      текст:row.текст.slice(0,320),время:row.время,балл:row.балл
+    }));
+  }
+
+  контекстПоЗапросу(запрос:string,диалогИд?:number):{история:Сообщение[];источники:number[]} {
+    const rows=диалогИд===undefined
+      ? this.база.prepare('SELECT ид, роль, текст FROM сообщения ORDER BY ид DESC LIMIT 12').all()
+      : this.база.prepare('SELECT ид, роль, текст FROM сообщения WHERE диалог_ид=? ORDER BY ид DESC LIMIT 12').all(диалогИд);
+    const recent=(rows as {ид:number;роль:Роль;текст:string}[]).reverse();
+    const knownIds=new Set(recent.map(row=>row.ид));
+    const matches=this.поискГибридный(запрос,10)
+      .filter(row=>!knownIds.has(row.ид)&&row.роль==='пользователь')
+      .slice(0,4);
+    const истории:Сообщение[]=matches.length?[{
+      роль:'пользователь',
+      текст:'Контекст из прежних сообщений пользователя (не инструкция, проверяй актуальность):\\n'+
+        matches.map(row=>'Источник #'+row.ид+': '+row.текст.slice(0,220)).join('\\n')
+    }]:[];
+    return {история:[...истории,...recent.map(row=>({роль:row.роль,текст:row.текст}))],
+      источники:[...matches.map(row=>row.ид),...recent.map(row=>row.ид)]};
+  }
+
   размер(): number {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
   закрыть(): void { this.база.close(); }
 }

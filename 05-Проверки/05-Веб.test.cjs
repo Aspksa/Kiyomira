@@ -104,6 +104,17 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(streamPackets.some(x=>x.type==='chunk'),true);
     assert.equal(streamPackets.at(-1).type,'done');
     assert.equal((await request('/api/chats/'+streamChat)).data.messages.length,2);
+    const factsChat=(await request('/api/chats','POST',{title:'Сохранённые решения'})).data.id;
+    await request('/api/chats/'+factsChat+'/message','POST',{text:'Решение: использовать SQLite'});
+    const factResult=await request('/api/memory/facts');
+    assert.equal(factResult.status,200);
+    assert.equal(factResult.data.facts.some(x=>x.ключ==='решение'&&x.источник_ид>0),true);
+    const retrieved=await request('/api/memory/search?q='+encodeURIComponent('использовать SQLite'));
+    assert.equal(retrieved.status,200);
+    assert.equal(retrieved.data.method,'local-lexical-hybrid');
+    assert.equal(retrieved.data.results.some(x=>x.диалог_ид===factsChat&&x.ид>0),true);
+    const fullGraph=await request('/api/brain');
+    assert.equal(fullGraph.data.facts.some(x=>x.ключ==='решение'),true);
     const history=await request('/api/chats/'+a);
     assert.deepEqual(history.data.messages.map(x=>x.роль),['пользователь','ассистент']);
     assert.equal((await request('/api/chats/'+b)).data.messages.length,0);
