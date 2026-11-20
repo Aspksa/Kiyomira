@@ -23,6 +23,9 @@ jobs:
       - name: Real Chrome browser smoke (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: node --experimental-transform-types 05-Проверки/07-Браузер.cjs
+      - name: Chrome layout visibility regression (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: node --experimental-transform-types 05-Проверки/08-ГеометрияЧата.cjs
       - name: Run self-check
         run: npm run preflight
       - name: Start CLI
