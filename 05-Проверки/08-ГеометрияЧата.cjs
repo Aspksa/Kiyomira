@@ -115,7 +115,7 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
       if(width>=701){
         assert.equal(balance.brainFocused.percent,30);
         assert.equal(balance.chatFocused.percent,45);
-        assert.equal(balance.manual.percent,45,'manual mode must not auto-change width');
+        assert.equal(balance.manual.percent,balance.initial.percent,'manual mode must restore saved manual width');
       }
 
       const unity=await evaluate(`(()=>{
