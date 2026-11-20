@@ -56,6 +56,37 @@ export class Ядро {
     }
   }
 
+
+  // Stream only complete, source-backed model responses. Persist exactly once
+  // after the upstream stream has completed, never on partial/error/cancel.
+  async ответитьПотоком(
+    текст: string, диалогИд: number|undefined, сигнал: AbortSignal|undefined,
+    onChunk:(chunk:string)=>void
+  ):Promise<string>{
+    if(this.состояние!=='работает')throw new Error('Ядро не запущено');
+    if(!текст.trim())throw new Error('Пустое сообщение');
+    this.активныхОтветов++;
+    try{
+      const история=this.память.получить(диалогИд);
+      const источники=this.память.источникиКонтекста(диалогИд);
+      this.сообщить('контекст',undefined,диалогИд,источники);
+      if(сигнал?.aborted)throw new Error('Запрос отменён');
+      this.сообщить('генерация',undefined,диалогИд);
+      const messages=[...история,{роль:'пользователь' as const,текст}];
+      const ответ=this.модель.создатьОтветПотоком
+        ? await this.модель.создатьОтветПотоком(messages,сигнал,onChunk)
+        : await this.модель.создатьОтвет(messages,сигнал);
+      if(!this.модель.создатьОтветПотоком)onChunk(ответ);
+      if(this.состояние!=='работает'||сигнал?.aborted)throw new Error('Запрос отменён');
+      if(!ответ.trim())throw new Error('Пустой ответ');
+      this.память.добавитьПару(текст,ответ,диалогИд);
+      this.сообщить('сохранение',undefined,диалогИд);
+      this.сообщить('ответ',undefined,диалогИд);
+      return ответ;
+    }catch(err){this.сообщить('ошибка','Запрос не выполнен',диалогИд);throw err;}
+    finally{this.активныхОтветов--;}
+  }
+
   диагностика(): { состояние: СостояниеЯдра; сообщений: number; задач: number; активныхОтветов: number } {
     return { состояние: this.состояние, сообщений: this.память.размер(), задач: this.задачи.размер(), активныхОтветов: this.активныхОтветов };
   }
