@@ -55,6 +55,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/initWorkspaceDivider/);
     assert.match(appSource,/KiyomiraLayout/);
     assert.match(appSource,/createStreamPainter/);
+    assert.match(appSource,/lastContextIds/);
+    assert.match(appSource,/source-return/);
     assert.match(appSource,/requestAnimationFrame\(paint\)/);
     assert.match(appSource,/initCognitiveFlow/);
     assert.match(appSource,/Sixteen tapered particles/);
@@ -73,6 +75,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/setPhase/);
     assert.match(brainSource,/getCorePosition/);
     assert.match(brainSource,/getSourceScreenPoints/);
+    assert.match(brainSource,/drawStaticRings/);
+    assert.match(brainSource,/semanticEdgeCount/);
     assert.match(brainSource,/setSelectedChat/);
     assert.match(brainSource,/brain-focus/);
     assert.match(brainSource,/brain.camera/);
@@ -338,6 +342,7 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   assert.ok(window.KiyomiraBrain.getViewportStats().routeEdges>=2,
     'only actual graph edges may form answer provenance');
   assert.doesNotThrow(()=>window.KiyomiraBrain.setMode('circle'));
+  assert.equal(window.KiyomiraBrain.getViewportStats().semanticEdgeCount,0);
   assert.match(elements.get('brain-count').textContent,/3 сообщений/);
   assert.match(source,/Weighted stable radial sectors/);
   assert.match(source,/sectorAngles/);
@@ -345,6 +350,16 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   assert.match(source,/Outer TRACKTOR categorical rim/);
   assert.match(source,/SQLite insertion chronology/);
   assert.match(source,/Dynamic throttle/);
+  const related={...graph,
+    facts:[
+      {ид:17,источник_ид:101,диалог_ид:1,ключ:'версия',значение:'2',статус:'кандидат'},
+      {ид:18,источник_ид:103,диалог_ид:1,ключ:'проект',значение:'Kiyomira',статус:'кандидат'}
+    ],
+    semanticLinks:[{a:17,b:18,похожесть:0.81}]
+  };
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(related));
+  assert.equal(window.KiyomiraBrain.getViewportStats().semanticEdgeCount,1,
+    'constellations must use genuine semantic fact links only');
   // Many persisted messages may fill one sector without leaking outside the ring.
   const denseGraph={
     chats:[{id:2,title:'Проекты',count:120}],
