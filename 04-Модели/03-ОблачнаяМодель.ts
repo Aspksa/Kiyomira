@@ -66,14 +66,15 @@ export class ОблачнаяМодель implements ПровайдерМоде�
     return [...new Set(данные.data.map(x => x.id).filter((id): id is string => typeof id === 'string' && !!id.trim()))];
   }
 
-  async создатьОтвет(история: readonly Сообщение[], сигнал?: AbortSignal): Promise<string> {
+  async создатьОтвет(история: readonly Сообщение[], сигнал?: AbortSignal, максТокенов = 2500): Promise<string> {
+    if (!Number.isSafeInteger(максТокенов) || максТокенов < 1 || максТокенов > 8192) throw new Error('Недопустимый лимит токенов');
     const ответ = await this.выполнить('/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: this.модель,
         stream: false,
-        max_tokens: 2500,
+        max_tokens: максТокенов,
         messages: история.map(сообщение => ({
           role: сообщение.роль === 'пользователь' ? 'user' : 'assistant',
           content: сообщение.текст
