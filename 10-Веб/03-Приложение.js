@@ -53,15 +53,27 @@ function markdown(text) {
   if(inCode)parts.push('<pre><code>'+escapeHtml(code.join('\n'))+'</code></pre>');
   return parts.join('');
 }
-function message(role,text,temporary=false) {
+function message(role,text,temporary=false,record=null) {
   const article=document.createElement('article');
   article.className='message '+(role==='пользователь'?'user':'assistant');
   if(temporary)article.dataset.temporary='1';
+  if(record?.ид)article.dataset.messageId=String(record.ид);
   const label=document.createElement('span');
   label.className='message-label';label.textContent=role==='пользователь'?'ВЫ':'KIYOMIRA';
   const body=document.createElement('div');
   body.className='message-body';body.innerHTML=markdown(text);
   article.append(label,body);
+  if(role==='ассистент'&&Array.isArray(record?.sources)&&record.sources.length){
+    const sourceButton=document.createElement('button');
+    sourceButton.type='button';sourceButton.className='message-sources';
+    sourceButton.textContent='В памяти · '+record.sources.length+' источников';
+    sourceButton.title='Показать использованные сообщения в мозге';
+    sourceButton.addEventListener('click',()=>{
+      window.KiyomiraBrain?.focusSources(record.sources,record.диалог_ид||state.selected);
+      article.classList.add('source-active');
+    });
+    article.append(sourceButton);
+  }
   el('messages').append(article);
   el('messages').scrollTop=el('messages').scrollHeight;
   return article;
@@ -102,6 +114,7 @@ async function pollBrainEvents() {
     if(event.id<=state.brainEventId)continue;
     state.brainEventId=event.id;
     window.KiyomiraBrain?.eventActivity(event);
+    el('workspace').dataset.activity=event.type;
     if(event.type==='контекст')window.KiyomiraUnity?.signal('recall');
     if(event.type==='ответ')window.KiyomiraUnity?.signal('answer');
   }
@@ -112,7 +125,7 @@ async function refreshChats() {
   renderChats();
   void refreshBrain();
 }
-async function selectChat(id) {
+async function selectChat(id,focusMessageId=null) {
   if(state.busy) {notice('Сначала остановите текущий ответ');return;}
   state.selected=id;
   const chat=state.chats.find(x=>x.ид===id);
@@ -120,9 +133,29 @@ async function selectChat(id) {
   const {messages}=await api('/api/chats/'+id);
   el('messages').replaceChildren();
   if(!messages.length)emptyMessages();
-  else for(const item of messages)message(item.роль,item.текст);
+  else for(const item of messages)message(item.роль,item.текст,false,item);
+  window.KiyomiraBrain?.setSelectedChat(id);
   renderChats();closeSidebar();notice();
+  if(focusMessageId)await jumpToMessage(focusMessageId);
 }
+async function jumpToMessage(messageId){
+  if(!Number.isSafeInteger(Number(messageId))||Number(messageId)<1)return;
+  const id=Number(messageId);
+  let target=el('messages').querySelector('[data-message-id="'+id+'"]');
+  if(!target){
+    const response=await api('/api/memory/messages/'+id);
+    const item=response.message;
+    if(item.диалог_ид!==state.selected)return;
+    const note=document.createElement('p');note.className='source-history-note';
+    note.textContent='Сообщение из более ранней истории · источник #'+id;
+    el('messages').prepend(note);
+    target=message(item.роль,item.текст,false,{...item,sources:response.sources});
+  }
+  target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});
+  target.classList.add('source-active');
+  window.KiyomiraBrain?.focusSources([id],state.selected);
+}
+
 async function newChat() {
   if(state.busy)return;
   const result=await api('/api/chats','POST',{title:'Новый диалог'});
@@ -194,7 +227,7 @@ async function sendMessage(ev) {
     temp.remove();partial.remove();
     const {messages}=await api('/api/chats/'+id);
     el('messages').replaceChildren();
-    for(const item of messages)message(item.роль,item.текст);
+    for(const item of messages)message(item.роль,item.текст,false,item);
     window.KiyomiraBrain?.setPhase('response');
     await pollBrainEvents().catch(()=>{});
     await refreshChats();
@@ -490,7 +523,7 @@ async function bootstrap() {
     if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();el('chat-form').requestSubmit();}
   });
   el('stop-response').addEventListener('click',()=>{void stopMessage();});
-  window.addEventListener('kiyomira-brain-select',event=>{if(event.detail?.chatId && !state.busy)void selectChat(event.detail.chatId);});
+  window.addEventListener('kiyomira-brain-select',event=>{if(event.detail?.chatId && !state.busy)void selectChat(event.detail.chatId,event.detail.messageId||null);});
   el('mobile-brain').addEventListener('click',()=>{
     const shown=el('workspace').classList.toggle('show-brain');
     el('mobile-brain').setAttribute('aria-pressed',String(shown));
