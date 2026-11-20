@@ -536,7 +536,7 @@ function initCognitiveFlow(){
     if(kind==='send')return point(composer.getBoundingClientRect(),root,.88,.5);
     const last=messages.querySelector('.message.assistant:last-child');
     const rect=(last||messages).getBoundingClientRect();
-    return point(rect,root,.12,last?.offsetHeight?.valueOf() ? .5:.55);
+    return point(rect,root,.12,last ? .5 : .55);
   }
   function layout(){
     if(mobile.matches)return;
@@ -573,7 +573,6 @@ function initCognitiveFlow(){
     })).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=root.width&&p.y<=root.height);
   }
   function bezier(start,end,t){
-    const bend=Math.max(22,Math.abs(end.x-start.x)*.32);
     const midpoint={x:(start.x+end.x)/2,y:(start.y+end.y)/2-
       Math.min(45,Math.abs(end.x-start.x)*.11)};
     // Quadratic curve adapted from Mizuyori. Core/composer are real DOM positions.
@@ -605,6 +604,7 @@ function initCognitiveFlow(){
     for(let i=effects.length-1;i>=0;i--){
       const e=effects[i],state=targets(e),t=(time-e.started)/e.duration;
       if(!state||t>1.35){effects.splice(i,1);continue;}
+      if(t<0)continue;
       const [r,g,b]=e.color;
       if(t<=1){
         // Sixteen tapered particles, with a small bloom around the leading head.
@@ -640,7 +640,7 @@ function initCognitiveFlow(){
     if(reduceMotion.matches||mobile.matches||document.hidden)return;
     workspace.classList.add('flow-active',kind==='send'?'flow-to-brain':kind==='recall'?'flow-recall':'flow-to-chat');
     if(!ctx)return;
-    const validIds=Array.isArray(sources)?sources.filter(Number.isSafeInteger).slice(0,8):[];
+    const validIds=Array.isArray(sources)?[...new Set(sources.filter(Number.isSafeInteger))].slice(0,8):[];
     // Recall is emitted only when SQLite actually returned IDs shown on the brain.
     const visibleIds=kind==='recall'?sourcePoints(validIds).map(p=>p.id):[null];
     if(kind==='recall'&&!visibleIds.length)return;
