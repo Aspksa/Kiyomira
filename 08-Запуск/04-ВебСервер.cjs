@@ -43,11 +43,12 @@ function idИзПути(путь) {
 
 async function создатьВебСервер({ корень = resolve(__dirname, '..'), порт = 0 } = {}) {
   // Reuse the existing TypeScript core, memory and cloud provider; do not duplicate response logic.
-  const [{ Ядро }, { ПамятьДиалога }, { ТестоваяМодель }, { ОблачнаяМодель }] = await Promise.all([
+  const [{ Ядро }, { ПамятьДиалога }, { ТестоваяМодель }, { ОблачнаяМодель }, { определитьТемы, кандидатыПротиворечий }] = await Promise.all([
     import('../01-Ядро/02-Управление.ts'),
     import('../02-Память/01-ПамятьДиалога.ts'),
     import('../04-Модели/02-ТестоваяМодель.ts'),
-    import('../04-Модели/03-ОблачнаяМодель.ts')
+    import('../04-Модели/03-ОблачнаяМодель.ts'),
+    import('../02-Память/02-КартаЗнаний.ts')
   ]);
   const база = new ПамятьДиалога(200, process.env.KIYOMIRA_DB_PATH || join(корень, '06-Данные', 'память.sqlite'));
   let ключ = process.env.CLOUD_RU_API_KEY || '';
@@ -77,6 +78,18 @@ async function создатьВебСервер({ корень = resolve(__dirna
   };
   const ядро = new Ядро(провайдер, база);
   ядро.запустить();
+  // Bounded in-process lifecycle log. No secret keys, raw prompts, or responses.
+  let номерСобытия = 0;
+  const событияМозга = [];
+  ядро.подписаться(event=>{
+    if (!['контекст','генерация','сохранение','ответ','ошибка'].includes(event.тип)) return;
+    событияМозга.push({
+      id:++номерСобытия, type:event.тип, at:event.время,
+      chatId:event.диалогИд||null,
+      sources:Array.isArray(event.источники)?event.источники.slice(-200):[]
+    });
+    if(событияМозга.length>160)событияМозга.shift();
+  });
   const cookie = randomBytes(32).toString('hex');
   let origin = '';
 
@@ -112,15 +125,26 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (запрос.method === 'GET' && путь === '/api/status') {
         return json(ответ,200,{ ready:true, provider:демоРежим ? 'demo' : ключ && модель ? 'cloud' : 'unconfigured', model:модель, keyPresent:!!ключ, verified:проверено, lastError:последняяОшибка, active:активные.size });
       }
+      if (запрос.method === 'GET' && путь === '/api/brain/events') {
+        const since = Math.max(0, Number(url.searchParams.get('after'))||0);
+        return json(ответ,200,{latest:номерСобытия,events:событияМозга.filter(e=>e.id>since).slice(-80)});
+      }
       if (запрос.method === 'GET' && путь === '/api/brain') {
-        // Read-only view of actual saved conversations, not fabricated LLM activations.
-        const chats = база.списокДиалогов();
-        return json(ответ,200,{ chats:chats.slice(0,24).map(chat=>({
-          id:chat.ид,title:chat.название,
-          messages:база.сообщенияДиалога(chat.ид).slice(-6).map(item=>({
-            preview:String(item.текст||'').slice(0,90),role:item.роль
-          }))
-        })) });
+        const snapshot = база.картаДиалогов(1000);
+        const messages = snapshot.сообщения.map(item=>({
+          id:item.ид,chatId:item.диалог_ид,role:item.роль,
+          preview:String(item.текст||'').slice(0,160),at:item.время,
+          topics:определитьТемы(item.текст)
+        }));
+        const chats=snapshot.диалоги.map(chat=>({
+          id:chat.ид,title:chat.название,count:chat.сообщений,
+          topics:определитьТемы(chat.название)
+        }));
+        const candidates=кандидатыПротиворечий(snapshot.сообщения);
+        return json(ответ,200,{
+          chats,messages,totalMessages:snapshot.всегоСообщений,
+          candidates,latest:номерСобытия
+        });
       }
       if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
       if (запрос.method === 'POST' && путь === '/api/chats') {
