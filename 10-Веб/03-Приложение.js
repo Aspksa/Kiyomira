@@ -173,8 +173,8 @@ async function saveSettings(event) {
     if(apiKey)payload.apiKey=apiKey;
     await api('/api/settings','POST',payload);
     el('api-key').value='';
-    feedback('Настройки сохранены. Ключ действует только до завершения Kiyomira.',true);
     await loadSettings();await updateStatus();
+    feedback('Настройки сохранены. Ключ действует только до завершения Kiyomira.',true);
   }catch(err){feedback(err.message);}
 }
 async function models() {
