@@ -361,7 +361,8 @@ export class ПамятьДиалога {
   путиПодтверждённыхФактов(запрос:string,лимит=4,глубина=2){
     const maxResults=Math.max(1,Math.min(8,Math.trunc(лимит)||4));
     const maxDepth=Math.max(1,Math.min(3,Math.trunc(глубина)||2));
-    const seeds=this.подтверждённыеДляКонтекста(запрос,5);
+    // A single strongest anchor keeps directly related facts available to explore.
+    const seeds=this.подтверждённыеДляКонтекста(запрос,1);
     if(!seeds.length)return [];
     const rows=this.база.prepare(
       "SELECT ид,источник_ид,ключ,значение,статус FROM факты_кандидаты WHERE статус='подтверждено' ORDER BY ид DESC LIMIT 500"
