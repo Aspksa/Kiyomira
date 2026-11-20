@@ -42,10 +42,14 @@ async function smoke() {
     const headers={Cookie:cookie,'X-Kiyomira-Request':'1'};
     const status=await fetch(url+'/api/status',{headers});
     assert.equal(status.status,200);
-    assert.equal((await status.json()).provider,'demo');
+    assert.equal((await status.json()).provider,'unconfigured');
     const created=await fetch(url+'/api/chats',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{"title":"Тест BAT"}'});
     assert.equal(created.status,201);
     const {id}=await created.json();
+    const missing=await fetch(url+'/api/chats/'+id+'/message',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{"text":"Не надо имитировать ИИ"}'});
+    assert.equal(missing.status,409);
+    const enable=await fetch(url+'/api/settings',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{"demoMode":true}'});
+    assert.equal(enable.status,200);
     const send=await fetch(url+'/api/chats/'+id+'/message',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{"text":"Проверка BAT"}'});
     assert.equal(send.status,200);
     assert.match((await send.json()).reply,/Проверка BAT/);
