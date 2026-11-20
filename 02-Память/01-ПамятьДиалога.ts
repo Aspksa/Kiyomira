@@ -53,7 +53,7 @@ export class ПамятьДиалога {
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_ключ ON факты_кандидаты(ключ, диалог_ид)');
     const factColumns=this.база.prepare('PRAGMA table_info(факты_кандидаты)').all() as {name:string}[];
     if(!factColumns.some(x=>x.name==='изменено')){
-      this.база.exec('ALTER TABLE факты_кандидаты ADD COLUMN изменено TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP');
+      this.база.exec('ALTER TABLE факты_кандидаты ADD COLUMN изменено TEXT NOT NULL DEFAULT ''');
     }
     this.база.exec(`CREATE TABLE IF NOT EXISTS история_фактов (
       ид INTEGER PRIMARY KEY AUTOINCREMENT,
