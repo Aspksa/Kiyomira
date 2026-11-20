@@ -14,6 +14,7 @@
   const palette=['#dc8a48','#aa7d57','#7ea19a','#b5a07a','#b76c51','#8d87a4','#d1a468','#659b93'];
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let mode='circle',nodes=[],edges=[],chatIds=[],selected=null,selectedChat=null;
+  let recalled=new Set(),conflicts=[],totalMessages=0,focus=false;
   let pan={x:0,y:0},zoom=1,width=0,height=0,pointer=null,moved=false;
   let visible=!document.hidden,raf=0,lastTick=0,active=false,phase='idle',phaseAt=0;
   let flashUntil=0,arrivals=[],layoutStarted=0;
@@ -260,4 +261,102 @@
     setBusy(value){setPhase(value?'request':'idle');}
   };
   resize();
-})();
+})()  // Themes are heuristic labels; only actual messages/known dialogue membership are facts.
+  function update(data) {
+    const chats=Array.isArray(data.chats)?data.chats:[];
+    const rows=Array.isArray(data.messages)?data.messages.slice(-1000):[];
+    const previous=new Map(nodes.map(n=>[n.id,n]));
+    const topics=['проекты','люди','события','документы','решения','общее'];
+    const label={проекты:'Проекты',люди:'Люди',события:'События',документы:'Документы',решения:'Решения',общее:'Прочее'};
+    const buckets=new Map(topics.map(x=>[x,[]]));
+    for(const m of rows){const topic=(m.topics||[]).find(x=>buckets.has(x))||'общее';buckets.get(topic).push(m);}
+    const groups=[];
+    for(const topic of topics) {
+      const batch=buckets.get(topic);
+      for(let i=0;i<batch.length;i+=60)groups.push({topic,key:topic+':'+i/60,items:batch.slice(i,i+60),label:label[topic]});
+    }
+    const fresh=[{id:'core',kind:'core',x:0,y:0,tx:0,ty:0,label:'KIYOMIRA'}],links=[];
+    const chatPositions=new Map(),groupPositions=new Map();
+    groups.forEach((g,i)=>{
+      const idx=fresh.length,old=previous.get('g'+g.key);
+      fresh.push({id:'g'+g.key,kind:'cluster',label:g.label,group:i,count:g.items.length,topic:g.topic,x:old?.x,y:old?.y});
+      groupPositions.set(g.key,idx);links.push([0,idx]);
+    });
+    const messagesByChat=new Map();
+    for(const m of rows){if(!messagesByChat.has(m.chatId))messagesByChat.set(m.chatId,[]);messagesByChat.get(m.chatId).push(m);}
+    for(const chat of chats) {
+      const messages=messagesByChat.get(chat.id)||[];if(!messages.length)continue;
+      const idx=fresh.length,old=previous.get('c'+chat.id);
+      const topic=(messages[0].topics||[])[0]||'общее';
+      const g=groups.find(x=>x.topic===topic&&x.items.some(item=>item.chatId===chat.id))||groups.find(x=>x.topic===topic);
+      fresh.push({id:'c'+chat.id,kind:'chat',chatId:chat.id,label:String(chat.title||''),group:groups.indexOf(g),count:messages.length,x:old?.x,y:old?.y});
+      chatPositions.set(chat.id,idx);if(g)links.push([groupPositions.get(g.key),idx]);
+    }
+    for(const m of rows){
+      const chatIndex=chatPositions.get(m.chatId);if(chatIndex===undefined)continue;
+      const idx=fresh.length,old=previous.get('m'+m.id);
+      fresh.push({id:'m'+m.id,messageId:m.id,chatId:m.chatId,kind:'message',label:String(m.preview||''),role:m.role,group:fresh[chatIndex].group,x:old?.x,y:old?.y});
+      links.push([chatIndex,idx]);
+    }
+    nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
+    chatIds=chats.map(c=>c.id);
+    totalMessages=Number(data.totalMessages||rows.length);
+    conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
+    selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
+    count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · '+conflicts.length+' возможных конфликтов';
+    if(!selected)info.textContent=rows.length?'Темы определены автоматически. Нажмите на узел для источника.':'Память пуста. Начните разговор.';
+    layout();
+    if(previous.size>1)flashUntil=now()+650;
+    request();
+  }
+  function layout() {
+    const groups=nodes.filter(n=>n.kind==='cluster'),chats=nodes.filter(n=>n.kind==='chat');
+    const byGroup=new Map(groups.map(n=>[n.group,[]]));
+    chats.forEach(chat=>byGroup.get(chat.group)?.push(chat));
+    for(let i=0;i<groups.length;i++){
+      const g=groups[i],a=i*2.399963229728653-Math.PI/2;
+      if(mode==='circle'){const r=110+(i%4)*39;g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
+      else if(mode==='honeycomb'){
+        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groups.length/6);
+        g.tx=(col-2.5)*146+(row%2)*73;g.ty=(row-(rows-1)/2)*128;
+      }else{const r=78+39*Math.sqrt(i);g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
+      if(!Number.isFinite(g.x)){g.x=g.tx;g.y=g.ty;}
+      const peers=byGroup.get(g.group)||[];
+      peers.forEach((chat,j)=>{
+        const angle=j*2.399963229728653;
+        const radius=17+11*Math.sqrt(j);
+        chat.tx=g.tx+Math.cos(angle)*radius;chat.ty=g.ty+Math.sin(angle)*radius;
+        if(!Number.isFinite(chat.x)){chat.x=chat.tx;chat.y=chat.ty;}
+      });
+    }
+    const byChat=new Map(chats.map(n=>[n.chatId,[]]));
+    nodes.filter(n=>n.kind==='message').forEach(n=>byChat.get(n.chatId)?.push(n));
+    for(const chat of chats){
+      const peers=byChat.get(chat.chatId)||[];
+      peers.forEach((n,i)=>{
+        const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
+        n.tx=chat.tx+Math.cos(a)*r;n.ty=chat.ty+Math.sin(a)*r;
+        if(!Number.isFinite(n.x)){n.x=n.tx;n.y=n.ty;}
+      });
+    }
+    // Stable de-overlap for semantic cluster anchors.
+    for(let repeat=0;repeat<5;repeat++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+      const a=groups[i],b=groups[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dist=Math.hypot(dx,dy)||.01;
+      const limit=mode==='honeycomb'?145:62;
+      if(dist<limit){const amount=(limit-dist)*.18;a.tx+=dx/dist*amount;a.ty+=dy/dist*amount;b.tx-=dx/dist*amount;b.ty-=dy/dist*amount;}
+    }
+    request();
+  }
+  function setMode(next) {
+    if(!['circle','honeycomb','links'].includes(next))return;
+    mode=next;
+    document.querySelectorAll('[data-brain-mode]').forEach(button=>{
+      const on=button.dataset.brainMode===mode;
+      button.classList.toggle('selected',on);button.setAttribute('aria-pressed',String(on));
+    });
+    layout();save();
+  }
+  function save(){
+    try{localStorage.setItem('kiyomira.brain.camera',JSON.stringify({mode,zoom,x:pan.x,y:pan.y}));}catch{}
+  }
+;
