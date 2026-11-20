@@ -243,7 +243,20 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   // These are runtime checks, not mere syntax or string-match assertions.
   assert.doesNotThrow(()=>window.KiyomiraBrain.update(graph));
   assert.match(elements.get('brain-count').textContent,/3 сообщений/);
-  assert.doesNotThrow(()=>clicks['mode:honeycomb:click']());
+  assert.match(source,/Dense radial arrays arranged as columns and rows/);
+  assert.match(source,/outer-ring category marker/);
+  // Many persisted messages may fill one sector without leaking outside the ring.
+  const denseGraph={
+    chats:[{id:2,title:'Проекты',count:120}],
+    messages:Array.from({length:120},(_,i)=>({
+      id:200+i,chatId:2,role:'пользователь',
+      preview:'Проект #'+i,topics:['проекты']
+    })),
+    totalMessages:120,candidates:[]
+  };
+  assert.doesNotThrow(()=>window.KiyomiraBrain.update(denseGraph));
+  assert.match(elements.get('brain-count').textContent,/120 сообщений/);
+    assert.doesNotThrow(()=>clicks['mode:honeycomb:click']());
   assert.doesNotThrow(()=>clicks['mode:links:click']());
   assert.doesNotThrow(()=>clicks['mode:circle:click']());
   assert.doesNotThrow(()=>window.KiyomiraBrain.eventActivity({
