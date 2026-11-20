@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { извлечьФакты, определитьСвязьФактов, определитьТемы } from './02-КартаЗнаний.ts';
 import { ранжировать, релевантность, токены } from './04-ГибридныйПоиск.ts';
 import { извлечьОтношения, согласоватьОтношения } from './06-СмысловыеОтношения.ts';
+import { классифицироватьПамять } from './07-ВидыПамяти.ts';
 import { извлечьСущностиСИсточником, связатьСущности, объединитьПовторы,
   оценитьДостоверность, временнаяМетка, маршрутПоиска, цепочкиПоИсточникам } from './05-СущностиИВремя.ts';
 
@@ -149,6 +150,11 @@ export class ПамятьДиалога {
       PRIMARY KEY(источник_ид,тип,название)
     )`);
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_память_сущности_название ON память_сущности_индекс(тип,название,источник_ид)');
+    this.база.exec(`CREATE TABLE IF NOT EXISTS память_типы_индекс (
+      источник_ид INTEGER NOT NULL, тип TEXT NOT NULL, основание TEXT NOT NULL,
+      PRIMARY KEY(источник_ид,тип)
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_память_типы ON память_типы_индекс(тип,источник_ид)');
     this.база.exec(`CREATE TABLE IF NOT EXISTS память_отношения_индекс (
       источник_ид INTEGER NOT NULL, тип TEXT NOT NULL, субъект TEXT NOT NULL,
       объект TEXT NOT NULL, фрагмент TEXT NOT NULL,
@@ -164,12 +170,14 @@ export class ПамятьДиалога {
     this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_память_производные_удаление
       AFTER DELETE ON сообщения BEGIN
       DELETE FROM память_сущности_индекс WHERE источник_ид=old.ид;
+      DELETE FROM память_типы_индекс WHERE источник_ид=old.ид;
       DELETE FROM память_отношения_индекс WHERE источник_ид=old.ид;
       DELETE FROM память_эпизоды_индекс WHERE источник_ид=old.ид;
     END`);
     this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_память_производные_обновление
       AFTER UPDATE OF текст ON сообщения BEGIN
       DELETE FROM память_сущности_индекс WHERE источник_ид=old.ид;
+      DELETE FROM память_типы_индекс WHERE источник_ид=old.ид;
       DELETE FROM память_отношения_индекс WHERE источник_ид=old.ид;
       DELETE FROM память_эпизоды_индекс WHERE источник_ид=old.ид;
       UPDATE память_фоновые_курсоры SET последний_ид=MIN(последний_ид,old.ид-1)
@@ -373,6 +381,10 @@ export class ПамятьДиалога {
       'INSERT OR IGNORE INTO память_отношения_индекс(источник_ид,тип,субъект,объект,фрагмент) VALUES(?,?,?,?,?)');
     for(const relation of извлечьОтношения(текст,ид))
       putRelation.run(ид,relation.тип,relation.субъект,relation.объект,relation.фрагмент);
+    const addType=this.база.prepare(
+      'INSERT OR IGNORE INTO память_типы_индекс(источник_ид,тип,основание) VALUES(?,?,?)');
+    for(const classification of классифицироватьПамять(текст))
+      addType.run(ид,classification.вид,classification.основание);
     const when=временнаяМетка(текст);
     const category=определитьТемы(текст)[0];
     this.база.prepare(`INSERT OR REPLACE INTO память_эпизоды_индекс
@@ -419,10 +431,41 @@ export class ПамятьДиалога {
     return {последний_ид:cursor,ожидает:pending};
   }
 
+  видыПамяти(тип?:string,лимит=60){
+    const count=Math.max(1,Math.min(150,Math.trunc(лимит)||60));
+    return (тип
+      ?this.база.prepare(`SELECT t.источник_ид,t.тип,t.основание,s.время
+         FROM память_типы_индекс t JOIN сообщения s ON s.ид=t.источник_ид
+         WHERE t.тип=? ORDER BY t.источник_ид DESC LIMIT ?`).all(тип,count)
+      :this.база.prepare(`SELECT t.источник_ид,t.тип,t.основание,s.время
+         FROM память_типы_индекс t JOIN сообщения s ON s.ид=t.источник_ид
+         ORDER BY t.источник_ид DESC LIMIT ?`).all(count));
+  }
+
+  // Summaries group explicit, user-approved facts by key and keep all IDs;
+  // this is not free-form AI summarization and never changes memory.
+  сводкиПодтверждённойПамяти(лимит=30){
+    const facts=this.база.prepare(`SELECT ид,источник_ид,ключ,значение
+      FROM факты_кандидаты WHERE статус='подтверждено' ORDER BY ид DESC LIMIT 500`
+    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string}[];
+    const groups=new Map<string,typeof facts>();
+    for(const row of facts){
+      if(!groups.has(row.ключ))groups.set(row.ключ,[]);
+      groups.get(row.ключ)!.push(row);
+    }
+    return [...groups].map(([ключ,rows])=>({
+      ключ,значения:[...new Set(rows.map(x=>x.значение))],
+      источники:[...new Set(rows.map(x=>x.источник_ид))],
+      факты:rows.map(x=>x.ид),
+      требуется_проверка:new Set(rows.map(x=>x.значение)).size>1
+    })).slice(0,Math.max(1,Math.min(50,лимит)));
+  }
+
   проверитьЦелостностьПамяти(){
     const check=this.база.prepare('PRAGMA quick_check').all() as {quick_check:string}[];
     const orphans=(this.база.prepare(`SELECT
       (SELECT count(*) FROM память_сущности_индекс e LEFT JOIN сообщения s ON s.ид=e.источник_ид WHERE s.ид IS NULL)+
+      (SELECT count(*) FROM память_типы_индекс t LEFT JOIN сообщения s ON s.ид=t.источник_ид WHERE s.ид IS NULL)+
       (SELECT count(*) FROM память_отношения_индекс r LEFT JOIN сообщения s ON s.ид=r.источник_ид WHERE s.ид IS NULL)+
       (SELECT count(*) FROM память_эпизоды_индекс p LEFT JOIN сообщения s ON s.ид=p.источник_ид WHERE s.ид IS NULL) AS n`
     ).get() as {n:number}).n;
