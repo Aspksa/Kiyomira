@@ -97,6 +97,27 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         'long history must scroll '+width+'x'+height+JSON.stringify(history));
       assert.equal(send.display,'grid');
       assert.notEqual(send.visibility,'hidden');
+      const balance=await evaluate(`(()=>{
+        const manager=window.KiyomiraLayout,brain=window.KiyomiraBrain;
+        const auto=document.getElementById('brain-auto-layout');
+        if(!manager||!brain?.getViewportStats)return {error:'Missing Kiyomira 6 controls'};
+        const initial=manager.getState();
+        manager.focus('brain');const brainFocused=manager.getState();
+        manager.focus('chat');const chatFocused=manager.getState();
+        const fit=brain.getViewportStats().fit;
+        const before=manager.getState();
+        auto.click();manager.focus('brain');const manual=manager.getState();
+        auto.click();
+        return {initial,brainFocused,chatFocused,manual,before,fit};
+      })()`);
+      assert.ok(!balance.error,JSON.stringify(balance));
+      assert.ok(balance.fit>0&&balance.fit<=1,'Graph must fit inside narrow viewport');
+      if(width>=701){
+        assert.equal(balance.brainFocused.percent,30);
+        assert.equal(balance.chatFocused.percent,45);
+        assert.equal(balance.manual.percent,45,'manual mode must not auto-change width');
+      }
+
       const unity=await evaluate(`(()=>{
         const host=document.getElementById('workspace');
         const flow=document.getElementById('cognitive-flow');
