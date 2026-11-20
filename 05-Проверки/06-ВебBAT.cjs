@@ -52,6 +52,8 @@ async function smoke() {
     console.log('[BAT WEB] request quit');
     const quit=await fetch(url+'/api/quit',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
     assert.equal(quit.status,200);
+    await quit.text();
+    console.log('[BAT WEB] quit acknowledged');
     const result=await Promise.race([exitPromise,timeout]);
     console.log('[BAT WEB] process exited',result);
     assert.equal(result,0,'BAT must exit cleanly');
