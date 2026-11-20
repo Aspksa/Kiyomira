@@ -696,6 +696,16 @@
       request();
     },
     getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
+    getSourceScreenPoints(ids){
+      const chosen=new Set((Array.isArray(ids)?ids:[]).filter(Number.isSafeInteger).slice(0,12));
+      const box=canvas.getBoundingClientRect(),scale=zoom*fitScale();
+      return nodes.filter(node=>node.kind==='message'&&chosen.has(node.messageId))
+        .slice(0,8).map(node=>({
+          id:node.messageId,
+          x:box.left+box.width/2+pan.x+node.x*scale,
+          y:box.top+box.height/2+pan.y+node.y*scale
+        }));
+    },
     getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
