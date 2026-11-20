@@ -131,49 +131,99 @@
     if(previous.size>1)flashUntil=now()+650;
     request();
   }
+
+  // TRACKTOR-like concentric sector map: each topic occupies a bounded angular
+  // slice INSIDE the outer ring. Every dot is a stored message, never filler.
   function layout() {
-    const groups=nodes.filter(n=>n.kind==='cluster'),chats=nodes.filter(n=>n.kind==='chat');
+    const groups=nodes.filter(n=>n.kind==='cluster');
+    const chats=nodes.filter(n=>n.kind==='chat');
+    const messages=nodes.filter(n=>n.kind==='message');
+    const groupCount=groups.length;
     const byGroup=new Map(groups.map(n=>[n.group,[]]));
     chats.forEach(chat=>byGroup.get(chat.group)?.push(chat));
+    const byChat=new Map(chats.map(n=>[n.chatId,[]]));
+    messages.forEach(n=>byChat.get(n.chatId)?.push(n));
+    const sectorCount=Math.max(8,groupCount);
     for(let i=0;i<groups.length;i++){
-      const g=groups[i],a=i*2.399963229728653-Math.PI/2;
-      if(mode==='circle'){const r=110+(i%4)*39;g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
-      else if(mode==='honeycomb'){
-        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groups.length/6);
-        g.tx=(col-2.5)*146+(row%2)*73;g.ty=(row-(rows-1)/2)*128;
-      }else{const r=78+39*Math.sqrt(i);g.tx=Math.cos(a)*r;g.ty=Math.sin(a)*r;}
-      if(!Number.isFinite(g.x)){g.x=g.tx;g.y=g.ty;}
-      const peers=byGroup.get(g.group)||[];
+      const group=groups[i];
+      if(mode==='circle'){
+        const start=-Math.PI/2+i*TAU/sectorCount;
+        const end=start+TAU/sectorCount;
+        const center=(start+end)/2;
+        group.sectorStart=start;group.sectorEnd=end;
+        group.tx=Math.cos(center)*99;
+        group.ty=Math.sin(center)*99;
+      }else if(mode==='honeycomb'){
+        const col=i%6,row=Math.floor(i/6),rows=Math.ceil(groupCount/6);
+        group.tx=(col-2.5)*146+(row%2)*73;
+        group.ty=(row-(rows-1)/2)*128;
+      }else{
+        const angle=i*2.399963229728653-Math.PI/2;
+        const radius=78+39*Math.sqrt(i);
+        group.tx=Math.cos(angle)*radius;group.ty=Math.sin(angle)*radius;
+      }
+      if(!Number.isFinite(group.x)){group.x=group.tx;group.y=group.ty;}
+      const peers=byGroup.get(group.group)||[];
       peers.forEach((chat,j)=>{
-        const angle=j*2.399963229728653;
-        const radius=17+11*Math.sqrt(j);
-        chat.tx=g.tx+Math.cos(angle)*radius;chat.ty=g.ty+Math.sin(angle)*radius;
+        if(mode==='circle'){
+          const start=group.sectorStart,end=group.sectorEnd;
+          const margin=Math.min(.09,(end-start)*.13);
+          const angle=start+margin+(j+.5)/Math.max(1,peers.length)*(end-start-2*margin);
+          const radius=142+(j%3)*9;
+          chat.tx=Math.cos(angle)*radius;chat.ty=Math.sin(angle)*radius;
+        }else{
+          const angle=j*2.399963229728653,radius=17+11*Math.sqrt(j);
+          chat.tx=group.tx+Math.cos(angle)*radius;
+          chat.ty=group.ty+Math.sin(angle)*radius;
+        }
         if(!Number.isFinite(chat.x)){chat.x=chat.tx;chat.y=chat.ty;}
       });
     }
-    const byChat=new Map(chats.map(n=>[n.chatId,[]]));
-    nodes.filter(n=>n.kind==='message').forEach(n=>byChat.get(n.chatId)?.push(n));
-    for(const chat of chats){
-      const peers=byChat.get(chat.chatId)||[];
-      peers.forEach((n,i)=>{
-        const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
-        n.tx=chat.tx+Math.cos(a)*r;n.ty=chat.ty+Math.sin(a)*r;
-        if(!Number.isFinite(n.x)){n.x=n.tx;n.y=n.ty;}
-      });
+    for(const group of groups){
+      const peers=messages.filter(n=>n.group===group.group);
+      if(mode==='circle'){
+        // Dense radial arrays arranged as columns and rows, within each slice.
+        const perRow=Math.max(1,Math.min(14,Math.ceil(Math.sqrt(peers.length*1.35))));
+        const rows=Math.max(1,Math.ceil(peers.length/perRow));
+        const start=group.sectorStart,end=group.sectorEnd;
+        const margin=Math.min(.075,(end-start)*.1);
+        peers.forEach((message,index)=>{
+          const row=Math.floor(index/perRow),col=index%perRow;
+          const occupied=Math.min(perRow,peers.length-row*perRow);
+          const angle=start+margin+(col+.5)/occupied*(end-start-2*margin);
+          const radius=174+(row+.5)/rows*59;
+          message.tx=Math.cos(angle)*radius;
+          message.ty=Math.sin(angle)*radius;
+          if(!Number.isFinite(message.x)){message.x=message.tx;message.y=message.ty;}
+        });
+      }else{
+        for(const chat of byGroup.get(group.group)||[]){
+          const items=byChat.get(chat.chatId)||[];
+          items.forEach((item,index)=>{
+            const angle=index*2.399963229728653,radius=12+6*Math.sqrt(index);
+            item.tx=chat.tx+Math.cos(angle)*radius;
+            item.ty=chat.ty+Math.sin(angle)*radius;
+            if(!Number.isFinite(item.x)){item.x=item.tx;item.y=item.ty;}
+          });
+        }
+      }
     }
     for(const fact of nodes.filter(n=>n.kind==='fact')){
       const source=nodes.find(n=>n.messageId===fact.sourceId);
       if(!source)continue;
       const angle=fact.factId*2.399963229728653;
-      fact.tx=source.tx+Math.cos(angle)*11;
-      fact.ty=source.ty+Math.sin(angle)*11;
+      fact.tx=source.tx+Math.cos(angle)*7;fact.ty=source.ty+Math.sin(angle)*7;
       if(!Number.isFinite(fact.x)){fact.x=fact.tx;fact.y=fact.ty;}
     }
-    // Stable de-overlap for semantic cluster anchors.
-    for(let repeat=0;repeat<5;repeat++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
-      const a=groups[i],b=groups[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dist=Math.hypot(dx,dy)||.01;
-      const limit=mode==='honeycomb'?156:68;
-      if(dist<limit){const amount=(limit-dist)*.18;a.tx+=dx/dist*amount;a.ty+=dy/dist*amount;b.tx-=dx/dist*amount;b.ty-=dy/dist*amount;}
+    if(mode!=='circle'){
+      for(let iteration=0;iteration<5;iteration++){
+        for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+          const left=groups[i],right=groups[j];
+          const dx=left.tx-right.tx,dy=left.ty-right.ty;
+          const dist=Math.hypot(dx,dy)||.01,limit=mode==='honeycomb'?156:68;
+          if(dist<limit){const push=(limit-dist)*.18;left.tx+=dx/dist*push;left.ty+=dy/dist*push;right.tx-=dx/dist*push;right.ty-=dy/dist*push;}
+        }
+      }
     }
     request();
   }
@@ -217,21 +267,32 @@
         ctx.strokeStyle=r===111||r===244?'rgba(238,138,60,.24)':'rgba(238,138,60,.09)';
         ctx.lineWidth=r===111?1:.6;circle(0,0,r);ctx.stroke();
       }
-      const sectors=Math.max(8,Math.min(24,chatIds.length));
-      for(let i=0;i<sectors;i++){
-        const a=-Math.PI/2+i*TAU/sectors;
-        ctx.strokeStyle='rgba(238,138,60,.095)';ctx.lineWidth=.6;
-        ctx.beginPath();ctx.moveTo(Math.cos(a)*76,Math.sin(a)*76);
-        ctx.lineTo(Math.cos(a)*257,Math.sin(a)*257);ctx.stroke();
+
+      const groups=nodes.filter(n=>n.kind==='cluster');
+      const sectorCount=Math.max(8,groups.length);
+      for(let i=0;i<sectorCount;i++){
+        const a=-Math.PI/2+i*TAU/sectorCount;
+        ctx.strokeStyle='rgba(238,138,60,.12)';ctx.lineWidth=.65;
+        ctx.beginPath();ctx.moveTo(Math.cos(a)*81,Math.sin(a)*81);
+        ctx.lineTo(Math.cos(a)*244,Math.sin(a)*244);ctx.stroke();
       }
-      // Small data-driven arc ticks: number of ticks derives from saved messages.
-      nodes.filter(n=>n.kind==='message').forEach((node,i)=>{
-        const a=Math.atan2(node.y,node.x),rr=248+(i%3)*6;
-        ctx.strokeStyle=palette[Math.abs(node.group||0)%palette.length];ctx.globalAlpha=.52;
-        ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
-        ctx.lineTo(Math.cos(a)*(rr+4),Math.sin(a)*(rr+4));ctx.stroke();
+      // Each actual topic has a labelled wedge and an outer-ring category marker.
+      const icons={проекты:'◇',люди:'○',события:'◷',документы:'▤',решения:'✓',общее:'•'};
+      groups.forEach((group,i)=>{
+        const angle=-Math.PI/2+(i+.5)*TAU/sectorCount;
+        const nameRadius=257;
+        const x=Math.cos(angle)*nameRadius,y=Math.sin(angle)*nameRadius;
+        ctx.font='9px ui-monospace,Consolas,monospace';
+        ctx.textAlign=Math.cos(angle)>.28?'left':Math.cos(angle)<-.28?'right':'center';
+        ctx.fillStyle=palette[i%palette.length];
+        ctx.fillText(group.label+' · '+group.count,x,y);
+        const outer=287,ox=Math.cos(angle)*outer,oy=Math.sin(angle)*outer;
+        ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=1;
+        circle(ox,oy,10);ctx.stroke();
+        ctx.textAlign='center';ctx.fillText(icons[group.topic]||'•',ox,oy+3);
       });
       ctx.globalAlpha=1;
+
     }
     if(mode==='honeycomb'){
       nodes.filter(n=>n.kind==='cluster').forEach(n=>{
@@ -248,6 +309,8 @@
       ctx.strokeStyle='rgba(224,92,75,.65)';ctx.setLineDash([4,5]);ctx.lineWidth=1.2;
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
     }
+    // The circle keeps labels and dense grids inside the surrounding category ring.
+    // Relations are still backed by SQLite source IDs.
     // Clear provenance of highlighted edges: core -> thematic group -> dialogue -> message.
     for(const [a,b] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
