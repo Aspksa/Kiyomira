@@ -18,6 +18,7 @@
   let visible=!document.hidden,raf=0,lastTick=0,active=false,phase='idle',phaseAt=0;
   let flashUntil=0;
   let totalMessages=0,conflicts=[],recalled=new Set(),focus=false,phaseChat=null;
+  let cameraTarget=null;
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
 
@@ -146,7 +147,7 @@
     // Stable de-overlap for semantic cluster anchors.
     for(let repeat=0;repeat<5;repeat++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
       const a=groups[i],b=groups[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dist=Math.hypot(dx,dy)||.01;
-      const limit=mode==='honeycomb'?145:62;
+      const limit=mode==='honeycomb'?156:68;
       if(dist<limit){const amount=(limit-dist)*.18;a.tx+=dx/dist*amount;a.ty+=dy/dist*amount;b.tx-=dx/dist*amount;b.ty-=dy/dist*amount;}
     }
     request();
@@ -209,8 +210,9 @@
     }
     if(mode==='honeycomb'){
       nodes.filter(n=>n.kind==='cluster').forEach(n=>{
-        hexPath(n.x,n.y,71);ctx.lineWidth=1;ctx.strokeStyle='rgba(238,138,60,.29)';ctx.stroke();
-        hexPath(n.x,n.y,68);ctx.lineWidth=.5;ctx.strokeStyle='rgba(238,138,60,.11)';ctx.stroke();
+        const radius=48+Math.min(30,Math.sqrt(Math.max(1,n.count||1))*3.3);
+        hexPath(n.x,n.y,radius);ctx.lineWidth=1;ctx.strokeStyle='rgba(238,138,60,.29)';ctx.stroke();
+        hexPath(n.x,n.y,radius-3);ctx.lineWidth=.5;ctx.strokeStyle='rgba(238,138,60,.11)';ctx.stroke();
         ctx.fillStyle='rgba(238,138,60,.025)';ctx.fill();
       });
     }
@@ -278,8 +280,13 @@
     ctx.restore();
   }
   function interpolate(){
-    if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}return false;}
+    if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}if(cameraTarget){pan=cameraTarget;cameraTarget=null;}return false;}
     let moving=false;
+    if(cameraTarget){
+      const dx=cameraTarget.x-pan.x,dy=cameraTarget.y-pan.y;
+      if(Math.abs(dx)+Math.abs(dy)>.7){pan.x+=dx*.16;pan.y+=dy*.16;moving=true;}
+      else{pan=cameraTarget;cameraTarget=null;save();}
+    }
     for(const n of nodes){
       if(Math.abs(n.tx-n.x)+Math.abs(n.ty-n.y)>.2){
         n.x+=(n.tx-n.x)*.16;n.y+=(n.ty-n.y)*.16;moving=true;
@@ -307,7 +314,7 @@
     if(!pointer)return;
     const p=coord(e),dx=p.x-pointer.x,dy=p.y-pointer.y;
     if(Math.abs(dx)+Math.abs(dy)>2)moved=true;
-    if(moved){pan.x+=dx;pan.y+=dy;request();}
+    if(moved){cameraTarget=null;pan.x+=dx;pan.y+=dy;request();}
     pointer=p;
   });
   canvas.addEventListener('pointerup',e=>{
@@ -322,7 +329,7 @@
   canvas.addEventListener('pointercancel',()=>{pointer=null;});
   canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();},{passive:false});
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
-  document.getElementById('brain-reset')?.addEventListener('click',()=>{pan={x:0,y:0};zoom=1;request();save();});
+  document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;request();save();});
   document.getElementById('brain-focus')?.addEventListener('click',()=>{
     focus=!focus;document.body.classList.toggle('brain-focus',focus);
     const button=document.getElementById('brain-focus');button.textContent=focus?'Выход':'Фокус';
@@ -345,7 +352,7 @@
     else if(event.type==='ошибка')setPhase('error');
     if(event.chatId&&event.type==='контекст'){
       const n=nodes.find(n=>n.kind==='chat'&&n.chatId===event.chatId);
-      if(n&&zoom>=.95&&!pointer){pan={x:-n.x*zoom,y:-n.y*zoom};request();}
+      if(n&&zoom>=.95&&!pointer){cameraTarget={x:-n.x*zoom,y:-n.y*zoom};request();}
     }
   }
   document.addEventListener('visibilitychange',()=>{visible=!document.hidden;if(visible)request();});
