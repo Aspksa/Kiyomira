@@ -153,7 +153,6 @@ export class ПамятьДиалога {
         this.база.exec('UPDATE сообщения SET диалог_ид = 1 WHERE диалог_ид IS NULL');
       }
       this.база.exec('COMMIT');
-      this.invalidate();
     } catch (ошибка) {
       this.база.exec('ROLLBACK');
       throw ошибка;
@@ -188,6 +187,7 @@ export class ПамятьДиалога {
         this.база.prepare('UPDATE диалоги SET обновлено=CURRENT_TIMESTAMP WHERE ид=?').run(диалогИд);
       }
       this.база.exec('COMMIT');
+      this.invalidate();
     } catch (ошибка) {
       this.база.exec('ROLLBACK');
       throw ошибка;
@@ -254,6 +254,7 @@ export class ПамятьДиалога {
       this.база.prepare('DELETE FROM сообщения WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM диалоги WHERE ид=?').run(ид);
       this.база.exec('COMMIT');
+      this.invalidate();
     } catch (ошибка) { this.база.exec('ROLLBACK'); throw ошибка; }
   }
 
@@ -350,6 +351,7 @@ export class ПамятьДиалога {
       this.база.prepare('INSERT INTO история_фактов(факт_ид,действие,статус,значение) VALUES(?,?,?,?)')
         .run(ид,actual===old.значение?'проверка':'исправление',статус,actual);
       this.база.exec('COMMIT');
+      this.invalidate();
       return {ид,статус,значение:actual,источник_ид:old.источник_ид};
     }catch(error){this.база.exec('ROLLBACK');throw error;}
   }
@@ -649,6 +651,7 @@ export class ПамятьДиалога {
     ).run(название.trim(),проект.trim(),текст,hash);
     const row=this.база.prepare('SELECT ид FROM документы_памяти WHERE хеш=?')
       .get(hash) as {ид:number};
+    if(saved.changes)this.invalidate();
     return {id:row.ид,created:Boolean(saved.changes)};
   }
 
@@ -668,7 +671,9 @@ export class ПамятьДиалога {
 
   удалитьДокумент(ид:number){
     if(!Number.isSafeInteger(ид)||ид<1)throw new Error('Некорректный ID документа');
-    return this.база.prepare('DELETE FROM документы_памяти WHERE ид=?').run(ид).changes>0;
+    const removed=this.база.prepare('DELETE FROM документы_памяти WHERE ид=?').run(ид).changes>0;
+    if(removed)this.invalidate();
+    return removed;
   }
 
   // Explicit/manual embedding operations only; no automatic cloud calls.
@@ -738,6 +743,6 @@ export class ПамятьДиалога {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM документы_памяти; DELETE FROM источники_ответов; DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM документы_памяти; DELETE FROM источники_ответов; DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); this.invalidate(); }
   закрыть(): void { this.база.close(); }
 }
