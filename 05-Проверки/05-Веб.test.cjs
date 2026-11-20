@@ -19,7 +19,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(app.url,/^http:\/\/127\.0\.0\.1:\d+$/);
     const front=await fetch(app.url+'/');
     assert.equal(front.status,200);
-    assert.match(await front.text(),/Kiyomira — личный чат/);
+    assert.match(await front.text(),/Kiyomira — когнитивная система/);
     assert.match(front.headers.get('content-security-policy'),/default-src 'self'/);
     const cookie=front.headers.get('set-cookie').split(';')[0];
     const url=path=>app.url+path;
@@ -38,6 +38,12 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const appjs=await fetch(url('/03-Приложение.js'));
     assert.equal(appjs.status,200);
     assert.match(await appjs.text(),/markdown/);
+    const brainAsset=await fetch(url('/04-Мозг.js'));
+    assert.equal(brainAsset.status,200);
+    assert.match(await brainAsset.text(),/kiyomira-brain-select/);
+    const emptyBrain=await request('/api/brain');
+    assert.equal(emptyBrain.status,200);
+    assert.deepEqual(emptyBrain.data.chats,[]);
     const chats=await request('/api/chats');
     assert.deepEqual(chats.data.chats,[]);
     const first=await request('/api/chats','POST',{title:'Главный чат'});
@@ -56,6 +62,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const answer=await request('/api/chats/'+a+'/message','POST',{text:'Привет, Kiyomira!'});
     assert.equal(answer.status,200);
     assert.match(answer.data.reply,/Привет, Kiyomira!/);
+    const brainAfter=await request('/api/brain');
+    assert.equal(brainAfter.data.chats.some(x=>x.id===a&&x.messages.some(m=>m.preview.includes('Привет'))),true);
     const history=await request('/api/chats/'+a);
     assert.deepEqual(history.data.messages.map(x=>x.роль),['пользователь','ассистент']);
     assert.equal((await request('/api/chats/'+b)).data.messages.length,0);
