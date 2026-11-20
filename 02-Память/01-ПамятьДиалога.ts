@@ -499,7 +499,7 @@ export class ПамятьДиалога {
     const neighbours=this.база.prepare(`SELECT ид,источник_ид,ключ,значение,статус
       FROM факты_кандидаты WHERE статус='подтверждено'
       AND ид!=? AND (ключ=? OR значение=?) ORDER BY ид DESC LIMIT 160`
-    ).all(ид,fact.ключ,fact.значение) as typeof fact[];
+    ).all(ид,fact.ключ,fact.значение) as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string}[];
     const put=this.база.prepare(`INSERT OR REPLACE INTO память_ребра_фактов
       (a,b,тип,сила,источник_a,источник_b) VALUES(?,?,?,?,?,?)`);
     for(const candidate of neighbours){
@@ -532,6 +532,17 @@ export class ПамятьДиалога {
       this.recordTime('backgroundGraph',start);
       return {обработано:rows.length,последний_ид:last};
     }catch(error){this.база.exec('ROLLBACK');throw error;}
+  }
+
+  соседиПодтверждённогоФакта(ид:number,лимит=20){
+    if(!Number.isSafeInteger(ид)||ид<1)return [];
+    return this.база.prepare(`SELECT e.a,e.b,e.тип,e.сила,e.источник_a,e.источник_b
+      FROM память_ребра_фактов e
+      JOIN факты_кандидаты a ON a.ид=e.a AND a.статус='подтверждено'
+      JOIN факты_кандидаты b ON b.ид=e.b AND b.статус='подтверждено'
+      WHERE (e.a=? OR e.b=?) AND e.тип!='противоречие'
+      ORDER BY e.сила DESC,e.b DESC LIMIT ?`
+    ).all(ид,ид,Math.max(1,Math.min(100,Math.trunc(лимит)||20)));
   }
 
   индексированныеСвязиФактов(лимит=100){
@@ -808,6 +819,48 @@ export class ПамятьДиалога {
       previous.push(row);if(previous.length>8)previous.shift();seen.set(row.ключ,previous);
     }
     return results;
+  }
+
+  // A bounded, cross-memory candidate list. This does not make unverified
+  // relations trusted facts. IDs preserve their original namespaces.
+  единыйПоискПамяти(запрос:string,лимит=12){
+    const start=performance.now();
+    const cap=Math.max(1,Math.min(30,Math.trunc(лимит)||12));
+    const messages=this.поискГибридный(запрос,8).map(row=>({
+      тип:'сообщение' as const,ид:row.ид,источник_ид:row.ид,
+      название:row.текст.slice(0,120),балл:row.балл,подтверждено:false
+    }));
+    const docs=this.поискДокументов(запрос,4).map(row=>({
+      тип:'документ' as const,ид:row.ид,источник_ид:null as number|null,
+      название:row.название,балл:row.балл,подтверждено:false
+    }));
+    const facts=this.подтверждённыеДляКонтекста(запрос,8).map(row=>({
+      тип:'факт' as const,ид:row.ид,источник_ид:row.источник_ид,
+      название:row.ключ+' — '+row.значение,балл:row.балл+2,подтверждено:true
+    }));
+    const route=маршрутПоиска(запрос,facts.length);
+    const relations=route.режим==='граф'?this.поискСмысловыхОтношений(запрос,4).map(row=>({
+      тип:'отношение' as const,ид:row.источники[0],источник_ид:row.источники[0],
+      название:row.субъект+' — '+row.тип+' — '+row.объект,
+      балл:row.балл,подтверждено:false
+    })):[];
+    const results=[...facts,...messages,...docs,...relations]
+      .sort((a,b)=>b.балл-a.балл||b.ид-a.ид).slice(0,cap);
+    this.recordTime('unifiedSearch',start);
+    return results;
+  }
+
+  поискПоВремени(с:string,по:string,лимит=50){
+    const valid=(v:string)=>/^20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(v)&&
+      !Number.isNaN(Date.parse(v+'T00:00:00Z'))&&
+      new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
+    if(!valid(с)||!valid(по)||с>по)throw new Error('Неверный диапазон дат');
+    return this.база.prepare(`SELECT p.источник_ид,p.категория,p.время_события,
+      p.статус_времени,p.время_записи
+      FROM память_эпизоды_индекс p JOIN сообщения s ON s.ид=p.источник_ид
+      WHERE p.время_события BETWEEN ? AND ?
+      ORDER BY p.время_события DESC,p.источник_ид DESC LIMIT ?`
+    ).all(с,по,Math.max(1,Math.min(100,Math.trunc(лимит)||50)));
   }
 
   поискГибридный(запрос:string,лимит=8){
