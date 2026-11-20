@@ -121,8 +121,9 @@ async function pollBrainEvents() {
     state.brainEventId=event.id;
     window.KiyomiraBrain?.eventActivity(event);
     el('workspace').dataset.activity=event.type;
-    if(event.type==='контекст')window.KiyomiraUnity?.signal('recall');
+    if(event.type==='контекст')window.KiyomiraUnity?.signal('recall',event.sources||[]);
     if(event.type==='ответ')window.KiyomiraUnity?.signal('answer');
+    if(event.type==='ошибка')window.KiyomiraUnity?.signal('error');
   }
   state.brainEventId=Math.max(state.brainEventId,payload.latest||0);
 }
@@ -514,43 +515,143 @@ function initCognitiveFlow(){
   const workspace=el('workspace'),svg=el('cognitive-flow');
   const path=el('cognitive-flow-path'),pulse=el('cognitive-flow-pulse');
   const brain=el('brain-canvas'),messages=el('messages'),composer=el('chat-form');
+  const overlay=el('cognitive-comets'),ctx=overlay?.getContext('2d');
   if(!workspace||!svg||!path||!pulse||!brain||!messages||!composer)return;
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
-  let currentKind=null,frame=0;
-  const point=(rect,root,where)=>({
-    x:rect.left-root.left+rect.width*where,
-    y:rect.top-root.top+rect.height*.5
+  const mobile=window.matchMedia('(max-width: 700px)');
+  const effects=[];
+  let currentKind=null,layoutFrame=0,effectFrame=0,width=0,height=0,dpr=1;
+  const point=(rect,root,x=.5,y=.5)=>({
+    x:rect.left-root.left+rect.width*x,
+    y:rect.top-root.top+rect.height*y
   });
+  function core(){
+    const root=workspace.getBoundingClientRect();
+    const fromBrain=window.KiyomiraBrain?.getCorePosition?.();
+    return fromBrain?{x:fromBrain.x-root.left,y:fromBrain.y-root.top}
+      :point(brain.getBoundingClientRect(),root);
+  }
+  function chat(kind){
+    const root=workspace.getBoundingClientRect();
+    if(kind==='send')return point(composer.getBoundingClientRect(),root,.88,.5);
+    const last=messages.querySelector('.message.assistant:last-child');
+    const rect=(last||messages).getBoundingClientRect();
+    return point(rect,root,.12,last?.offsetHeight?.valueOf() ? .5:.55);
+  }
   function layout(){
-    if(window.matchMedia('(max-width: 700px)').matches)return;
-    const root=workspace.getBoundingClientRect(),source=brain.getBoundingClientRect();
-    const target=(currentKind==='send'?composer:messages).getBoundingClientRect();
-    if(root.width<1||root.height<1||source.width<1||target.width<1)return;
-    const core=window.KiyomiraBrain?.getCorePosition?.();
-    const start=core
-      ?{x:core.x-root.left,y:core.y-root.top}
-      :point(source,root,.5);
-    const end=point(target,root,.12);
-    const control=Math.max(26,Math.abs(end.x-start.x)*.42);
-    const d='M '+start.x.toFixed(1)+' '+start.y.toFixed(1)+
-      ' C '+(start.x+control).toFixed(1)+' '+start.y.toFixed(1)+
-      ', '+(end.x-control).toFixed(1)+' '+end.y.toFixed(1)+
-      ', '+end.x.toFixed(1)+' '+end.y.toFixed(1);
+    if(mobile.matches)return;
+    const root=workspace.getBoundingClientRect(),from=core();
+    const to=chat(currentKind==='send'?'send':'answer');
+    if(root.width<1||root.height<1)return;
+    const c=Math.max(25,Math.abs(to.x-from.x)*.42);
+    const d='M '+from.x.toFixed(1)+' '+from.y.toFixed(1)+
+      ' C '+(from.x+c).toFixed(1)+' '+from.y.toFixed(1)+
+      ', '+(to.x-c).toFixed(1)+' '+to.y.toFixed(1)+
+      ', '+to.x.toFixed(1)+' '+to.y.toFixed(1);
     svg.setAttribute('viewBox','0 0 '+root.width+' '+root.height);
     path.setAttribute('d',d);pulse.setAttribute('d',d);
   }
-  function relayout(){
-    if(frame)return;
-    frame=requestAnimationFrame(()=>{frame=0;layout();});
+  function resizeLayer(){
+    if(!ctx||!overlay)return;
+    const rect=workspace.getBoundingClientRect();
+    const nextWidth=Math.round(rect.width),nextHeight=Math.round(rect.height);
+    const nextDpr=Math.min(window.devicePixelRatio||1,2);
+    if(nextWidth===width&&nextHeight===height&&nextDpr===dpr)return;
+    width=nextWidth;height=nextHeight;dpr=nextDpr;
+    overlay.width=Math.max(1,Math.round(width*dpr));
+    overlay.height=Math.max(1,Math.round(height*dpr));
   }
-  function signal(kind){
-    if(!['send','recall','answer'].includes(kind))return;
-    if(reduceMotion.matches||window.matchMedia('(max-width: 700px)').matches)return;
+  function relayout(){
+    if(layoutFrame)return;
+    layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;layout();resizeLayer();});
+  }
+  function sourcePoints(ids){
+    const root=workspace.getBoundingClientRect();
+    const positions=window.KiyomiraBrain?.getSourceScreenPoints?.(ids)||[];
+    return positions.map(p=>({
+      x:p.x-root.left,y:p.y-root.top,id:p.id
+    })).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.y>=0&&p.x<=root.width&&p.y<=root.height);
+  }
+  function bezier(start,end,t){
+    const bend=Math.max(22,Math.abs(end.x-start.x)*.32);
+    const midpoint={x:(start.x+end.x)/2,y:(start.y+end.y)/2-
+      Math.min(45,Math.abs(end.x-start.x)*.11)};
+    // Quadratic curve adapted from Mizuyori. Core/composer are real DOM positions.
+    return {x:(1-t)*(1-t)*start.x+2*(1-t)*t*midpoint.x+t*t*end.x,
+      y:(1-t)*(1-t)*start.y+2*(1-t)*t*midpoint.y+t*t*end.y};
+  }
+  const config={
+    send:{duration:900,color:[88,196,255]},
+    recall:{duration:1080,color:[92,223,182]},
+    answer:{duration:1200,color:[244,194,120]},
+    error:{duration:850,color:[226,108,98]}
+  };
+  function targets(e){
+    const origin=core();
+    if(e.kind==='send')return {a:chat('send'),b:origin};
+    if(e.kind==='answer'||e.kind==='error')return {a:origin,b:chat('answer')};
+    const actual=sourcePoints(e.sources);
+    return actual[e.index]?{a:origin,b:actual[e.index]}:null;
+  }
+  function frame(time){
+    effectFrame=0;
+    if(!ctx)return;
+    resizeLayer();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,width,height);
+    if(document.hidden||mobile.matches||reduceMotion.matches){
+      effects.length=0;return;
+    }
+    for(let i=effects.length-1;i>=0;i--){
+      const e=effects[i],state=targets(e),t=(time-e.started)/e.duration;
+      if(!state||t>1.35){effects.splice(i,1);continue;}
+      const [r,g,b]=e.color;
+      if(t<=1){
+        // Sixteen tapered particles, with a small bloom around the leading head.
+        ctx.globalCompositeOperation='lighter';
+        for(let j=15;j>=0;j--){
+          const lag=Math.max(0,t-j*.017);
+          const p=bezier(state.a,state.b,lag);
+          const fade=(1-j/16)*Math.min(1,t*7);
+          ctx.fillStyle='rgba('+r+','+g+','+b+','+(fade*.88).toFixed(3)+')';
+          ctx.beginPath();ctx.arc(p.x,p.y,Math.max(.7,4.1-j*.22),0,Math.PI*2);ctx.fill();
+        }
+        const p=bezier(state.a,state.b,t);
+        const glow=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,17);
+        glow.addColorStop(0,'rgba(255,255,255,.92)');
+        glow.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+        ctx.fillStyle=glow;ctx.beginPath();ctx.arc(p.x,p.y,17,0,Math.PI*2);ctx.fill();
+      }else{
+        // Arrival wave; distinct red failure, never a success animation on error.
+        const radius=7+(t-1)*84,alpha=Math.max(0,(1.35-t)/.35);
+        ctx.strokeStyle='rgba('+r+','+g+','+b+','+(alpha*.65).toFixed(3)+')';
+        ctx.lineWidth=2.3*alpha;ctx.beginPath();
+        ctx.arc(state.b.x,state.b.y,radius,0,Math.PI*2);ctx.stroke();
+      }
+      ctx.globalCompositeOperation='source-over';
+    }
+    if(effects.length)effectFrame=requestAnimationFrame(frame);
+  }
+  function signal(kind,sources=[]){
+    if(!config[kind])return;
     currentKind=kind;layout();
     workspace.classList.remove('flow-to-brain','flow-to-chat','flow-recall','flow-active');
-    // Restart animation cleanly after subsequent real events.
     void pulse.getBoundingClientRect();
+    if(reduceMotion.matches||mobile.matches||document.hidden)return;
     workspace.classList.add('flow-active',kind==='send'?'flow-to-brain':kind==='recall'?'flow-recall':'flow-to-chat');
+    if(!ctx)return;
+    const validIds=Array.isArray(sources)?sources.filter(Number.isSafeInteger).slice(0,8):[];
+    // Recall is emitted only when SQLite actually returned IDs shown on the brain.
+    const visibleIds=kind==='recall'?sourcePoints(validIds).map(p=>p.id):[null];
+    if(kind==='recall'&&!visibleIds.length)return;
+    const start=performance.now();
+    const selection=visibleIds.slice(0,8);
+    selection.forEach((id,index)=>{
+      effects.push({kind,sources:kind==='recall'?visibleIds:[],index,
+        color:config[kind].color,duration:config[kind].duration,started:start+index*70});
+    });
+    if(effects.length>12)effects.splice(0,effects.length-12);
+    if(!effectFrame)effectFrame=requestAnimationFrame(frame);
   }
   pulse.addEventListener('animationend',()=>{
     workspace.classList.remove('flow-active','flow-to-brain','flow-to-chat','flow-recall');
@@ -558,8 +659,18 @@ function initCognitiveFlow(){
   });
   new ResizeObserver(relayout).observe(workspace);
   window.addEventListener('resize',relayout);
-  reduceMotion.addEventListener?.('change',relayout);
-  window.KiyomiraUnity={signal,relayout};
+  reduceMotion.addEventListener?.('change',()=>{
+    if(reduceMotion.matches)effects.length=0;
+    relayout();
+  });
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden)effects.length=0;
+  });
+  if(ctx)workspace.classList.add('comet-layer-enabled');
+  window.KiyomiraUnity={signal,relayout,getStats:()=>({
+    enabled:Boolean(ctx),activeEffects:effects.length,
+    layerWidth:width,layerHeight:height,kind:currentKind
+  })};
   relayout();
 }
 
