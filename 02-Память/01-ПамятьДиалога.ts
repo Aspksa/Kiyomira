@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { явноеУтверждение } from './02-КартаЗнаний.ts';
-import { ранжировать } from './04-ГибридныйПоиск.ts';
+import { извлечьФакты } from './02-КартаЗнаний.ts';
+import { ранжировать, релевантность } from './04-ГибридныйПоиск.ts';
 
 export type Роль = 'пользователь' | 'ассистент';
 export type Сообщение = Readonly<{ роль: Роль; текст: string }>;
@@ -51,6 +51,23 @@ export class ПамятьДиалога {
       UNIQUE(источник_ид,ключ,значение)
     )`);
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_ключ ON факты_кандидаты(ключ, диалог_ид)');
+    const factColumns=this.база.prepare('PRAGMA table_info(факты_кандидаты)').all() as {name:string}[];
+    if(!factColumns.some(x=>x.name==='изменено')){
+      this.база.exec('ALTER TABLE факты_кандидаты ADD COLUMN изменено TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP');
+    }
+    this.база.exec(`CREATE TABLE IF NOT EXISTS история_фактов (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      факт_ид INTEGER NOT NULL,
+      действие TEXT NOT NULL,
+      статус TEXT NOT NULL,
+      значение TEXT NOT NULL,
+      время TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_история_фактов ON история_фактов(факт_ид, ид)');
+    this.база.exec(`INSERT INTO история_фактов(факт_ид,действие,статус,значение)
+      SELECT f.ид,'миграция',f.статус,f.значение FROM факты_кандидаты f
+      WHERE NOT EXISTS(SELECT 1 FROM история_фактов h WHERE h.факт_ид=f.ид)`);
+
     // Non-destructive bounded recovery of older user-authored key:value statements.
     const known=(this.база.prepare('SELECT count(*) AS n FROM факты_кандидаты').get() as {n:number}).n;
     if(!known){
@@ -141,6 +158,7 @@ export class ПамятьДиалога {
     if (!this.существуетДиалог(ид)) throw new Error('Диалог не найден');
     this.база.exec('BEGIN IMMEDIATE');
     try {
+      this.база.prepare('DELETE FROM история_фактов WHERE факт_ид IN (SELECT ид FROM факты_кандидаты WHERE диалог_ид=?)').run(ид);
       this.база.prepare('DELETE FROM факты_кандидаты WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM сообщения WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM диалоги WHERE ид=?').run(ид);
@@ -196,16 +214,21 @@ export class ПамятьДиалога {
   }
 
   private индексироватьФакт(источникИд:number,диалогИд:number,текст:string):void{
-    const fact=явноеУтверждение(текст);
-    if(!fact)return;
-    this.база.prepare(
-      'INSERT OR IGNORE INTO факты_кандидаты(источник_ид,диалог_ид,ключ,значение) VALUES(?,?,?,?)'
-    ).run(источникИд,диалогИд,fact.ключ,fact.значение);
+    for(const fact of извлечьФакты(текст)){
+      const result=this.база.prepare(
+        'INSERT OR IGNORE INTO факты_кандидаты(источник_ид,диалог_ид,ключ,значение) VALUES(?,?,?,?)'
+      ).run(источникИд,диалогИд,fact.ключ,fact.значение);
+      if(result.changes){
+        this.база.prepare(
+          "INSERT INTO история_фактов(факт_ид,действие,статус,значение) VALUES(?,'извлечение','требует проверки',?)"
+        ).run(Number(result.lastInsertRowid),fact.значение);
+      }
+    }
   }
 
   кандидатыФактов(лимит=200){
     return this.база.prepare(
-      'SELECT ид, источник_ид, диалог_ид, ключ, значение, статус, создано FROM факты_кандидаты ORDER BY ид DESC LIMIT ?'
+      'SELECT ид, источник_ид, диалог_ид, ключ, значение, статус, создано, изменено FROM факты_кандидаты ORDER BY ид DESC LIMIT ?'
     ).all(Math.max(1,Math.min(500,лимит)));
   }
 
@@ -216,6 +239,72 @@ export class ПамятьДиалога {
       FROM факты_кандидаты a JOIN факты_кандидаты b
       ON a.ключ=b.ключ AND a.ид<b.ид
       ORDER BY b.ид DESC LIMIT ?`).all(Math.max(1,Math.min(500,лимит)));
+  }
+
+
+  // Only a direct user action can approve, reject or edit a candidate.
+  изменитьФакт(ид:number,статус:'подтверждено'|'отклонено'|'требует проверки',значение?:string){
+    if(!Number.isSafeInteger(ид)||ид<1)throw new Error('Некорректный факт');
+    if(!['подтверждено','отклонено','требует проверки'].includes(статус))throw new Error('Некорректный статус');
+    if(значение!==undefined&&(typeof значение!=='string'||!значение.trim()||значение.length>240))
+      throw new Error('Некорректное исправление');
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      const old=this.база.prepare('SELECT ид,источник_ид,значение FROM факты_кандидаты WHERE ид=?')
+        .get(ид) as {ид:number;источник_ид:number;значение:string}|undefined;
+      if(!old)throw new Error('Факт не найден');
+      const actual=значение===undefined?old.значение:значение.trim();
+      this.база.prepare("UPDATE факты_кандидаты SET статус=?,значение=?,изменено=CURRENT_TIMESTAMP WHERE ид=?")
+        .run(статус,actual,ид);
+      this.база.prepare('INSERT INTO история_фактов(факт_ид,действие,статус,значение) VALUES(?,?,?,?)')
+        .run(ид,actual===old.значение?'проверка':'исправление',статус,actual);
+      this.база.exec('COMMIT');
+      return {ид,статус,значение:actual,источник_ид:old.источник_ид};
+    }catch(error){this.база.exec('ROLLBACK');throw error;}
+  }
+
+  историяФакта(ид:number){
+    if(!Number.isSafeInteger(ид)||ид<1)return [];
+    return this.база.prepare(
+      'SELECT ид,факт_ид,действие,статус,значение,время FROM история_фактов WHERE факт_ид=? ORDER BY ид DESC LIMIT 100'
+    ).all(ид);
+  }
+
+  связиПоСодержанию(лимит=120){
+    const facts=this.база.prepare(
+      "SELECT ид, источник_ид, ключ, значение FROM факты_кандидаты WHERE статус!='отклонено' ORDER BY ид DESC LIMIT 240"
+    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string}[];
+    const relations:{a:number;b:number;источники:number[];сходство:number;тип:string}[]=[];
+    for(let i=0;i<facts.length;i++)for(let j=i+1;j<facts.length;j++){
+      const a=facts[i],b=facts[j];
+      if(a.источник_ид===b.источник_ид)continue;
+      const similarity=релевантность(a.ключ+' '+a.значение,b.ключ+' '+b.значение);
+      if(similarity>=8){
+        relations.push({a:a.ид,b:b.ид,источники:[a.источник_ид,b.источник_ид],
+          сходство:similarity,тип:'текстовое сходство — требует проверки'});
+      }
+    }
+    return relations.sort((a,b)=>b.сходство-a.сходство).slice(0,Math.min(300,Math.max(1,лимит)));
+  }
+
+  противоречияФактов(лимит=60){
+    const facts=this.база.prepare(
+      "SELECT ид,источник_ид,ключ,значение FROM факты_кандидаты WHERE статус!='отклонено' ORDER BY ид DESC LIMIT 400"
+    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string}[];
+    const results:{a:number;b:number;источники:number[];ключ:string;статус:string}[]=[];
+    const seen=new Map<string,typeof facts>();
+    for(const row of facts){
+      const previous=seen.get(row.ключ)||[];
+      for(const older of previous){
+        if(row.значение!==older.значение&&row.источник_ид!==older.источник_ид){
+          results.push({a:row.ид,b:older.ид,источники:[row.источник_ид,older.источник_ид],
+            ключ:row.ключ,статус:'требует проверки'});
+          if(results.length>=лимит)return results;
+        }
+      }
+      previous.push(row);if(previous.length>8)previous.shift();seen.set(row.ключ,previous);
+    }
+    return results;
   }
 
   поискГибридный(запрос:string,лимит=8){
@@ -251,6 +340,6 @@ export class ПамятьДиалога {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
   закрыть(): void { this.база.close(); }
 }
