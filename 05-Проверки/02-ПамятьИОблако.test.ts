@@ -56,3 +56,37 @@ test('Cloud.ru не раскрывает ключ при ошибке HTTP', asy
   const клиент = new ОблачнаяМодель('секрет', 'модель', подмена);
   await assert.rejects(клиент.создатьОтвет([{ роль: 'пользователь', текст: 'Привет' }]), /HTTP 401/);
 });
+
+
+test('Cloud.ru запрашивает каталог /v1/models и использует Bearer API key', async () => {
+  const подмена: typeof fetch = async (url, параметры) => {
+    assert.equal(url, 'https://foundation-models.api.cloud.ru/v1/models');
+    assert.equal(параметры?.method, 'GET');
+    assert.equal((параметры?.headers as Record<string,string>).Authorization, 'Bearer тест-ключ');
+    return new Response(JSON.stringify({data:[{id:'ai-sage/GigaChat3-10B-A1.8B'},{id:'t-tech/T-pro-it-1.0'}]}),{status:200});
+  };
+  const клиент = new ОблачнаяМодель('тест-ключ','ai-sage/GigaChat3-10B-A1.8B',подмена);
+  assert.deepEqual(await клиент.получитьМодели(),['ai-sage/GigaChat3-10B-A1.8B','t-tech/T-pro-it-1.0']);
+});
+
+test('Cloud.ru реальный пробный ответ использует 16 токенов и модель, без демо-фолбэка', async () => {
+  const подмена: typeof fetch = async (_url, параметры) => {
+    const body=JSON.parse(String(параметры?.body));
+    assert.equal(body.model,'ai-sage/GigaChat3-10B-A1.8B');
+    assert.equal(body.max_tokens,16);
+    assert.equal(body.stream,false);
+    return new Response(JSON.stringify({choices:[{message:{content:'Готово'}}]}),{status:200});
+  };
+  const клиент=new ОблачнаяМодель('секрет','ai-sage/GigaChat3-10B-A1.8B',подмена);
+  assert.equal(await клиент.создатьОтвет([{роль:'пользователь',текст:'Ответь одним словом'}],undefined,16),'Готово');
+});
+
+test('Cloud.ru сообщает точный безопасный код HTTP 429 без секрета', async () => {
+  const подмена: typeof fetch=async()=>new Response('Bearer тестовый_секрет_НЕ_ПЕРЕДАВАТЬ',{status:429});
+  const клиент=new ОблачнаяМодель('тестовый_секрет_НЕ_ПЕРЕДАВАТЬ','модель',подмена);
+  await assert.rejects(клиент.создатьОтвет([{роль:'пользователь',текст:'Привет'}]), e => {
+    assert.match((e as Error).message,/HTTP 429/);
+    assert.doesNotMatch((e as Error).message,/тестовый_секрет_НЕ_ПЕРЕДАВАТЬ/);
+    return true;
+  });
+});
