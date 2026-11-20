@@ -108,14 +108,14 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         const before=manager.getState();
         auto.click();manager.focus('brain');const manual=manager.getState();
         auto.click();
-        return {initial,brainFocused,chatFocused,manual,before,fit};
+        return {initial,brainFocused,chatFocused,manual,before,fit,savedManual:Number(localStorage.getItem('kiyomira.workspace.chatPercent'))||35};
       })()`);
       assert.ok(!balance.error,JSON.stringify(balance));
       assert.ok(balance.fit>0&&balance.fit<=1,'Graph must fit inside narrow viewport');
       if(width>=701){
         assert.equal(balance.brainFocused.percent,30);
         assert.equal(balance.chatFocused.percent,45);
-        assert.equal(balance.manual.percent,balance.initial.percent,'manual mode must restore saved manual width');
+        assert.equal(balance.manual.percent,balance.savedManual,'manual mode must restore explicitly saved width, not auto focus width');
       }
 
       const unity=await evaluate(`(()=>{
