@@ -44,6 +44,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/kiyomira-brain-select/);
     assert.match(brainSource,/prefers-reduced-motion/);
     assert.match(brainSource,/setPhase/);
+    assert.match(brainSource,/brain-focus/);
+    assert.match(brainSource,/brain.camera/);
     assert.match(brainSource,/mode==='honeycomb'/);
     assert.match(brainSource,/if\(active&&!motion.matches&&edges.length\)/);
     const cssAsset=await fetch(url('/02-Стиль.css'));
@@ -71,7 +73,16 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(answer.status,200);
     assert.match(answer.data.reply,/Привет, Kiyomira!/);
     const brainAfter=await request('/api/brain');
-    assert.equal(brainAfter.data.chats.some(x=>x.id===a&&x.messages.some(m=>m.preview.includes('Привет'))),true);
+    assert.equal(brainAfter.data.messages.some(m=>m.chatId===a&&m.preview.includes('Привет')),true);
+    assert.equal(brainAfter.data.totalMessages,2);
+    assert.equal(brainAfter.data.messages.every(m=>Number.isInteger(m.id)&&Array.isArray(m.topics)),true);
+    const events=await request('/api/brain/events?after=0');
+    assert.equal(events.status,200);
+    assert.equal(events.data.events.some(e=>e.type==='контекст'&&e.chatId===a),true);
+    assert.equal(events.data.events.some(e=>e.type==='сохранение'&&e.chatId===a),true);
+    assert.equal(events.data.events.some(e=>e.type==='ответ'&&e.chatId===a),true);
+    assert.equal(events.data.events.some(e=>e.type==='генерация'&&e.chatId===a),true);
+    assert.equal((await request('/api/brain/events?after='+events.data.latest)).data.events.length,0);
     const history=await request('/api/chats/'+a);
     assert.deepEqual(history.data.messages.map(x=>x.роль),['пользователь','ассистент']);
     assert.equal((await request('/api/chats/'+b)).data.messages.length,0);
