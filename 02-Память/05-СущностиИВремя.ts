@@ -89,8 +89,34 @@ export function связатьСущности(rows:СущностьПамяти
 export function маршрутПоиска(запрос:string,подтвержденных=0){
   const tokens=запрос.trim().split(/\s+/).filter(Boolean);
   const complex=/(?:связ|почему|как измен|истори|противореч|между|сначала|потом|после|до |проект.+документ)/iu.test(запрос);
-  const depth=complex&&подтвержденных>0?2:0;
+  const depth=(complex&&подтвержденных>0||подтвержденных>=2)?2:0;
   return {режим:depth?'граф' as const:'быстрый' as const,глубина:depth,
     // Metadata always remains separate from generated model assertions.
     причина:depth?'запрос о взаимосвязях':'прямое извлечение',слов:tokens.length};
+}
+
+
+// A same-message co-mention is an association, never proof of causality.
+// Paths are limited and always carry the common source message ID.
+export function цепочкиПоИсточникам(rows:СущностьПамяти[],лимит=80){
+  const grouped=new Map<number,СущностьПамяти[]>();
+  for(const row of rows){
+    if(!grouped.has(row.источник_ид))grouped.set(row.источник_ид,[]);
+    grouped.get(row.источник_ид)!.push(row);
+  }
+  const result:{от:ТипСущности;к:ТипСущности;источник_ид:number;
+    от_название:string;к_название:string;тип:'совместное_упоминание'}[]=[];
+  const seen=new Set<string>();
+  for(const [source,list] of grouped){
+    for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+      const a=list[i],b=list[j];
+      if(a.тип===b.тип)continue;
+      const signature=[source,a.тип,a.название,b.тип,b.название].join('|');
+      if(seen.has(signature))continue;seen.add(signature);
+      result.push({от:a.тип,к:b.тип,источник_ид:source,
+        от_название:a.название,к_название:b.название,тип:'совместное_упоминание'});
+      if(result.length>=Math.max(1,Math.min(200,лимит)))return result;
+    }
+  }
+  return result;
 }
