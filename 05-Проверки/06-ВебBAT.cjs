@@ -1,6 +1,6 @@
 'use strict';
 // Windows CI: launch the real BAT from a path with Cyrillic and CMD metacharacters.
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { resolve } = require('node:path');
 
@@ -11,6 +11,7 @@ async function smoke() {
     KIYOMIRA_OFFLINE:'1',KIYOMIRA_SKIP_PYTHON:'1'};
   delete env.CLOUD_RU_API_KEY;
   delete env.CLOUD_RU_MODEL;
+  console.log('[BAT WEB] launch',cwd);
   const child=spawn('cmd.exe',['/d','/c','Kiyomira.bat'],{cwd,env,stdio:['ignore','pipe','pipe']});
   let output='',portUrl='',exited=false,exitCode=null;
   const exitPromise=new Promise((res,rej)=>{
@@ -33,6 +34,7 @@ async function smoke() {
   const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('BAT web startup timed out: '+output.slice(-1200))),60000);});
   try {
     const url=await Promise.race([readyPromise,timeout]);
+    console.log('[BAT WEB] ready',url);
     assert.match(url,/^http:\/\/127\.0\.0\.1:\d+$/);
     const home=await fetch(url+'/');
     assert.equal(home.status,200,'Browser page available');
@@ -47,14 +49,22 @@ async function smoke() {
     const send=await fetch(url+'/api/chats/'+id+'/message',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{"text":"Проверка BAT"}'});
     assert.equal(send.status,200);
     assert.match((await send.json()).reply,/Проверка BAT/);
+    console.log('[BAT WEB] request quit');
     const quit=await fetch(url+'/api/quit',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
     assert.equal(quit.status,200);
     const result=await Promise.race([exitPromise,timeout]);
+    console.log('[BAT WEB] process exited',result);
     assert.equal(result,0,'BAT must exit cleanly');
     console.log('BAT WEB SMOKE OK',url);
   } finally {
     clearTimeout(timer);
-    if(!exited)child.kill();
+    if(!exited){
+      console.error('[BAT WEB] force-stopping child process tree');
+      if(child.pid)spawnSync('taskkill.exe',['/PID',String(child.pid),'/T','/F'],{stdio:'ignore',timeout:5000});
+      child.kill();
+    }
+    child.stdout.destroy();
+    child.stderr.destroy();
   }
 }
 smoke().catch(err=>{console.error('BAT WEB SMOKE FAILED:',err.message);process.exitCode=1;});
