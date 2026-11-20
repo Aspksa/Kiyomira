@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <meta name="color-scheme" content="dark">
-<title>Kiyomira — личный чат</title>
+<title>Kiyomira — когнитивная система</title>
 <link rel="stylesheet" href="/02-Стиль.css">
+<script src="/04-Мозг.js" defer></script>
 <script src="/03-Приложение.js" defer></script>
 </head>
 <body>
@@ -35,10 +36,23 @@
       <div class="brand"><strong>KIYOMIRA</strong><span id="subtitle">Личное пространство</span></div>
       <div class="header-right">
         <span class="status" id="connection">Проверка...</span>
+        <button type="button" id="mobile-brain" class="icon-button mobile-only" aria-label="Показать мозг" aria-pressed="false" title="Мозг">◎</button>
         <button type="button" id="mobile-list" class="icon-button mobile-only" aria-label="Показать диалоги">☰</button>
       </div>
     </header>
-    <section id="chat-view" class="chat-view">
+    <section class="workspace" id="workspace">
+      <section class="brain-panel" aria-label="Визуальная карта диалогов">
+        <header class="brain-head"><div><div class="section-kicker">COGNITIVE CORE / LOCAL MEMORY</div><h1>Мозг Kiyomira</h1></div><span id="brain-live" class="brain-live">ОЖИДАНИЕ</span></header>
+        <div class="brain-stage"><canvas id="brain-canvas" aria-label="Интерактивная карта диалогов и сообщений"></canvas></div>
+        <div class="brain-controls" role="group" aria-label="Режим карты">
+          <button type="button" data-brain-mode="circle" class="selected" aria-pressed="true">Круг</button>
+          <button type="button" data-brain-mode="honeycomb" aria-pressed="false">Соты</button>
+          <button type="button" data-brain-mode="links" aria-pressed="false">Связи</button>
+          <button type="button" id="brain-reset" title="Сбросить масштаб">Центр</button>
+        </div>
+        <div class="brain-footer"><span id="brain-count">0 диалогов · 0 узлов</span><span id="brain-detail">Узлы показывают реальные диалоги и сообщения.</span></div>
+      </section>
+      <section id="chat-view" class="chat-view">
       <div class="conversation-head">
         <div>
           <div class="section-kicker">ИСТОРИЯ БЕСЕДЫ</div>
@@ -66,6 +80,7 @@
         </form>
         <p id="notice" class="notice" role="status"></p>
       </div>
+      </section>
     </section>
   </main>
 </div>
