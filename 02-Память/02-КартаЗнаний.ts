@@ -22,7 +22,7 @@ export function явноеУтверждение(текст:string):Утверж
   const pieces=line.split(/[:：]/),key=pieces[0].trim().toLocaleLowerCase('ru');
   const value=pieces.slice(1).join(':').trim().toLocaleLowerCase('ru');
   if(!value||key.length<3)return null;
-  return {ключ,значение:value,отрицание:/^(?:не|нет|без)\s/iu.test(value)};
+  return {ключ:key,значение:value,отрицание:/^(?:не|нет|без)\s/iu.test(value)};
 }
 export function кандидатыПротиворечий(записи:ГрафЗапись[],max=40){
   const byKey=new Map<string,{ид:number;значение:string}[]>();
