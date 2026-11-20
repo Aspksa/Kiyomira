@@ -70,6 +70,7 @@ function emptyMessages() {
   el('messages').innerHTML='<div class="empty"><span class="empty-symbol">狐</span><h2>Чем я могу помочь?</h2><p>Всё, что мы сохраняем, остаётся в SQLite на твоём устройстве.</p></div>';
 }
 function buttonBusy(value) {
+  window.KiyomiraBrain?.setBusy(value);
   state.busy=value;
   el('send').disabled=value;
   el('stop-response').hidden=!value;
@@ -87,9 +88,13 @@ function renderChats() {
     root.append(btn);
   }
 }
+async function refreshBrain() {
+  try { window.KiyomiraBrain?.update(await api('/api/brain')); } catch(err) { console.warn('Карта памяти: '+err.message); }
+}
 async function refreshChats() {
   state.chats=(await api('/api/chats')).chats;
   renderChats();
+  void refreshBrain();
 }
 async function selectChat(id) {
   if(state.busy) {notice('Сначала остановите текущий ответ');return;}
@@ -111,6 +116,7 @@ async function newChat() {
 async function updateStatus() {
   const result=await api('/api/status');
   const status=el('connection');
+  if(!state.busy)window.KiyomiraBrain?.setBusy(result.active>0);
   const active=result.provider==='cloud' && result.verified;
   status.className='status '+(active?'ok':result.provider==='unconfigured'?'err':'');
   status.textContent=result.provider==='demo'?'ДЕМО · тестовая модель':result.provider==='unconfigured'?'Cloud.ru не настроен':active?'Cloud.ru · модель подтверждена':'Cloud.ru · '+result.model+' · не проверен';
@@ -232,6 +238,14 @@ async function bootstrap() {
     if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();el('chat-form').requestSubmit();}
   });
   el('stop-response').addEventListener('click',()=>{void stopMessage();});
+  window.addEventListener('kiyomira-brain-select',event=>{if(event.detail?.chatId && !state.busy)void selectChat(event.detail.chatId);});
+  el('mobile-brain').addEventListener('click',()=>{
+    const shown=el('workspace').classList.toggle('show-brain');
+    el('mobile-brain').setAttribute('aria-pressed',String(shown));
+    el('mobile-brain').title=shown?'Показать чат':'Показать мозг';
+    el('mobile-brain').textContent=shown?'▤':'◎';
+    window.dispatchEvent(new Event('resize'));
+  });
   el('new-chat').addEventListener('click',()=>{void newChat();});
   el('nav-chat').addEventListener('click',()=>{closeModal();el('sidebar').classList.toggle('mobile-open');});
   el('mobile-list').addEventListener('click',()=>el('sidebar').classList.toggle('mobile-open'));
