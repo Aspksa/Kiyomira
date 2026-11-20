@@ -212,6 +212,32 @@ async function streamReply(chatId,text,onChunk) {
   }finally{reader.releaseLock();}
 }
 
+// Batch streamed Markdown updates to one browser frame. This does not fake
+// model tokens; only text received from the actual Cloud.ru stream is rendered.
+function createStreamPainter(article){
+  const body=article.querySelector('.message-body');
+  let full='',scheduled=false,stopped=false;
+  function paint(){
+    scheduled=false;
+    if(stopped||!body.isConnected)return;
+    body.innerHTML=markdown(full);
+    const scroller=el('messages');
+    const remaining=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight;
+    if(remaining<180)scroller.scrollTop=scroller.scrollHeight;
+  }
+  function add(part){
+    if(stopped)return;
+    full+=part;
+    if(!scheduled){scheduled=true;requestAnimationFrame(paint);}
+  }
+  function finish(){
+    if(stopped)return;
+    paint();stopped=true;
+  }
+  function cancel(){stopped=true;}
+  return {add,finish,cancel};
+}
+
 async function sendMessage(ev) {
   ev.preventDefault();
   if(state.busy || !state.selected)return;
@@ -226,12 +252,11 @@ async function sendMessage(ev) {
   const temp=message('пользователь',text,true);
   try {
     const partial=message('ассистент','',true);
-    let full='';
-    await streamReply(id,text,part=>{
-      full+=part;
-      partial.querySelector('.message-body').innerHTML=markdown(full);
-      el('messages').scrollTop=el('messages').scrollHeight;
-    });
+    const painter=createStreamPainter(partial);
+    try{
+      await streamReply(id,text,painter.add);
+      painter.finish();
+    }finally{painter.cancel();}
     temp.remove();partial.remove();
     const {messages}=await api('/api/chats/'+id);
     el('messages').replaceChildren();

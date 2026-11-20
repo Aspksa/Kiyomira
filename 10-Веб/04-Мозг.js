@@ -11,7 +11,7 @@
   const count=document.getElementById('brain-count');
   const live=document.getElementById('brain-live');
   const TAU=Math.PI*2;
-  const palette=['#dc8a48','#aa7d57','#7ea19a','#b5a07a','#b76c51','#8d87a4','#d1a468','#659b93'];
+  const palette=['#e1a05c','#5fc9bb','#76a8da','#b59bea','#d8aa75','#60b8a2','#c8c6ab','#8cb8c9'];
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let mode='circle',nodes=[],edges=[],chatIds=[],selected=null,selectedChat=null;
   let pan={x:0,y:0},zoom=1,width=0,height=0,pointer=null,moved=false;
@@ -19,6 +19,7 @@
   let flashUntil=0;
   let totalMessages=0,conflicts=[],factConflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   let cameraTarget=null,hovered=null,sectorAngles=[];
+  let memoryWaveAt=0,memoryWaveIds=new Set();
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -190,6 +191,7 @@
     const groups=nodes.filter(n=>n.kind==='cluster');
     const chats=nodes.filter(n=>n.kind==='chat');
     const messages=nodes.filter(n=>n.kind==='message');
+    const animateNew=nodes.length<=600&&!motion.matches;
     const byGroup=new Map(groups.map(n=>[n.group,[]]));
     for(const chat of chats)byGroup.get(chat.group)?.push(chat);
     const byChat=new Map(chats.map(n=>[n.chatId,[]]));
@@ -239,14 +241,21 @@
           const a=sector.start+margin+(col+.5)/used*(width-2*margin);
           const r=169+(row+.5)/rows*67;
           msg.tx=Math.cos(a)*r;msg.ty=Math.sin(a)*r;
-          if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
+          if(!Number.isFinite(msg.x)){
+            const parent=chats.find(c=>c.chatId===msg.chatId);
+            msg.x=animateNew?(parent?.tx??msg.tx*.85):msg.tx;
+            msg.y=animateNew?(parent?.ty??msg.ty*.85):msg.ty;
+          }
         });
       }else{
         for(const chat of byGroup.get(sector.group.group)||[]){
           (byChat.get(chat.chatId)||[]).forEach((msg,i)=>{
             const a=i*2.399963229728653,r=12+6*Math.sqrt(i);
             msg.tx=chat.tx+Math.cos(a)*r;msg.ty=chat.ty+Math.sin(a)*r;
-            if(!Number.isFinite(msg.x)){msg.x=msg.tx;msg.y=msg.ty;}
+            if(!Number.isFinite(msg.x)){
+              msg.x=animateNew?chat.tx:msg.tx;
+              msg.y=animateNew?chat.ty:msg.ty;
+            }
           });
         }
       }
@@ -322,15 +331,15 @@
   function draw(time){
     if(!width||!height)return;
     ctx.clearRect(0,0,width,height);
-    ctx.fillStyle='#030201';ctx.fillRect(0,0,width,height);
+    ctx.fillStyle='#02070b';ctx.fillRect(0,0,width,height);
     const glowX=width/2+clamp(pan.x*.05,-32,32),glowY=height/2+clamp(pan.y*.05,-32,32);
     const ambience=ctx.createRadialGradient(glowX,glowY,0,width/2,height/2,Math.max(width,height)*.7);
-    ambience.addColorStop(0,'rgba(238,138,60,.06)');ambience.addColorStop(1,'rgba(0,0,0,0)');
+    ambience.addColorStop(0,'rgba(62,166,166,.047)');ambience.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=ambience;ctx.fillRect(0,0,width,height);
     ctx.save();
     ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom*fitScale(),zoom*fitScale());
     const glow=ctx.createRadialGradient(0,0,5,0,0,300);
-    glow.addColorStop(0,'rgba(238,138,60,.12)');glow.addColorStop(.55,'rgba(238,138,60,.035)');glow.addColorStop(1,'rgba(238,138,60,0)');
+    glow.addColorStop(0,'rgba(111,202,188,.10)');glow.addColorStop(.55,'rgba(238,160,91,.029)');glow.addColorStop(1,'rgba(238,138,60,0)');
     ctx.fillStyle=glow;circle(0,0,300);ctx.fill();
     if(mode==='circle'){
       for(const r of [40,64,88,111,134,158,183,213,244,272,303]){
@@ -338,6 +347,21 @@
         ctx.lineWidth=r===111?1:.6;circle(0,0,r);ctx.stroke();
       }
 
+      // Outer TRACKTOR categorical rim, tied to actual thematic sectors.
+      ctx.lineWidth=.8;ctx.strokeStyle='rgba(99,165,176,.25)';
+      circle(0,0,299);ctx.stroke();
+      for(const sector of sectorAngles){
+        const width=sector.end-sector.start;
+        const count=Math.max(1,Math.min(14,Math.floor(width*9)));
+        for(let j=0;j<count;j++){
+          const angle=sector.start+(j+.5)*width/count;
+          const x=Math.cos(angle)*298,y=Math.sin(angle)*298;
+          ctx.globalAlpha=.20+(sector.group.count>0?.33:.05);
+          ctx.strokeStyle=palette[Math.abs(sector.group.group||0)%palette.length];
+          ctx.lineWidth=.7;circle(x,y,3.7);ctx.stroke();
+        }
+      }
+      ctx.globalAlpha=1;
       for(const sector of sectorAngles){
         const a=sector.start;
         ctx.strokeStyle='rgba(238,138,60,.12)';ctx.lineWidth=.65;
@@ -361,8 +385,18 @@
         circle(ox,oy,10);ctx.stroke();
         ctx.textAlign='center';ctx.fillText(icons[group.topic]||'•',ox,oy+3);
       });
+      // Core rings rotate only during a real API lifecycle; idle breathing stays subtle.
+      const rotating=active&&!motion.matches;
+      const theta=rotating?((time-phaseAt)/4500)%TAU:0;
+      for(let ring=0;ring<3;ring++){
+        const r=29+ring*7;
+        ctx.strokeStyle=ring===0?'rgba(239,188,119,.64)':ring===1?'rgba(98,201,184,.49)':'rgba(123,169,215,.37)';
+        ctx.lineWidth=ring===0?1.4:.9;ctx.beginPath();
+        ctx.arc(0,0,r,theta*(ring%2? -1:1)+ring*1.4,theta*(ring%2? -1:1)+ring*1.4+Math.PI*(rotating?1.15:1.65));
+        ctx.stroke();
+      }
       if(active||time<flashUntil){
-        ctx.strokeStyle=phase==='error'?'rgba(224,92,75,.6)':'rgba(238,138,60,.38)';
+        ctx.strokeStyle=phase==='error'?'rgba(224,92,75,.6)':'rgba(105,202,187,.48)';
         ctx.lineWidth=1.8;circle(0,0,65);ctx.stroke();
       }
       ctx.globalAlpha=1;
@@ -392,6 +426,8 @@
       ctx.beginPath();ctx.moveTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.stroke();ctx.setLineDash([]);
     }
     const detailZoom=zoom*fitScale();
+    const waveAge=time-memoryWaveAt;
+    const waveActive=memoryWaveIds.size>0&&waveAge>=0&&waveAge<1500&&!motion.matches;
     for(const [a,b,relationType] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
       if(detailZoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
@@ -399,6 +435,13 @@
       ctx.lineWidth=hot?1.35:.7;
       ctx.strokeStyle=hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
       ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
+      // A bounded illumination travels ONLY along links to source IDs reported by SQLite.
+      if(waveActive&&(memoryWaveIds.has(to.id)||memoryWaveIds.has(from.id))){
+        const t=clamp((waveAge/1500)*1.3-.12,0,1);
+        const x=from.x+(to.x-from.x)*t,y=from.y+(to.y-from.y)*t;
+        ctx.globalAlpha=.83*(1-waveAge/1500);
+        ctx.fillStyle='#92e6d2';circle(x,y,2.5);ctx.fill();ctx.globalAlpha=1;
+      }
     }
     // During a real request, light pulses travel along the existing graph only.
     if(active&&!motion.matches&&edges.length){
@@ -523,6 +566,7 @@
   function eventActivity(event){
     if(event.type==='контекст'){
       recalled=new Set((event.sources||[]).map(x=>'m'+x));phaseChat=event.chatId;
+      memoryWaveAt=now();memoryWaveIds=new Set(recalled);flashUntil=memoryWaveAt+1550;
       live.textContent='ЧТЕНИЕ КОНТЕКСТА';request();
     }else if(event.type==='генерация')setPhase('request');
     else if(event.type==='сохранение'){setPhase('response');live.textContent='ЗАПИСЬ SQLITE';}
