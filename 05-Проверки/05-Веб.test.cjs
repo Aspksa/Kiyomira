@@ -49,6 +49,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
     assert.match(appSource,/initCognitiveFlow/);
+    assert.match(appSource,/jumpToMessage/);
+    assert.match(appSource,/focusSources/);
     assert.match(appSource,/KiyomiraUnity/);
     assert.match(appSource,/kiyomira.workspace.chatPercent/);
     const brainAsset=await fetch(url('/04-Мозг.js'));
@@ -58,6 +60,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/prefers-reduced-motion/);
     assert.match(brainSource,/setPhase/);
     assert.match(brainSource,/getCorePosition/);
+    assert.match(brainSource,/setSelectedChat/);
     assert.match(brainSource,/brain-focus/);
     assert.match(brainSource,/brain.camera/);
     assert.match(brainSource,/mode==='honeycomb'/);
@@ -101,6 +104,15 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const brainAfter=await request('/api/brain');
     assert.equal(brainAfter.data.messages.some(m=>m.chatId===a&&m.preview.includes('Привет')),true);
     assert.equal(brainAfter.data.totalMessages,2);
+    const saved=(await request('/api/chats/'+a)).data.messages;
+    assert.equal(saved.length,2);
+    assert.ok(Array.isArray(saved[1].sources));
+    assert.equal(saved[1].sources.length,0);
+    const linked=await request('/api/memory/messages/'+saved[1].ид);
+    assert.equal(linked.status,200);
+    assert.equal(linked.data.message.диалог_ид,a);
+    assert.deepEqual(linked.data.sources,[]);
+    assert.equal((await request('/api/memory/messages/99999999')).status,404);
     assert.equal(brainAfter.data.sampledMessages,2);
     assert.equal(Object.values(brainAfter.data.topicTotals).reduce((a,b)=>a+b,0),2);
     assert.equal(brainAfter.data.messages.every(m=>Number.isInteger(m.id)&&Array.isArray(m.topics)),true);
