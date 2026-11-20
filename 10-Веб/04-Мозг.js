@@ -103,6 +103,23 @@
       fresh.push({id:'m'+m.id,messageId:m.id,chatId:m.chatId,kind:'message',label:String(m.preview||''),role:m.role,group:fresh[chatIndex].group,x:old?.x,y:old?.y});
       links.push([chatIndex,idx]);
     }
+    // Candidate facts are backed by explicit user statements and provenance.
+    const factPositions=new Map();
+    for(const fact of (Array.isArray(data.facts)?data.facts:[]).slice(0,200)){
+      const src=fresh.findIndex(n=>n.kind==='message'&&n.messageId===fact.источник_ид);
+      if(src<0)continue;
+      const idx=fresh.length,old=previous.get('f'+fact.ид);
+      fresh.push({
+        id:'f'+fact.ид,kind:'fact',factId:fact.ид,sourceId:fact.источник_ид,
+        chatId:fact.диалог_ид,label:String(fact.ключ)+': '+String(fact.значение),
+        status:fact.статус,group:fresh[src].group,x:old?.x,y:old?.y
+      });
+      factPositions.set(fact.ид,idx);links.push([src,idx]);
+    }
+    for(const edge of (Array.isArray(data.factLinks)?data.factLinks:[]).slice(0,200)){
+      const a=factPositions.get(edge.a),b=factPositions.get(edge.b);
+      if(a!==undefined&&b!==undefined)links.push([a,b]);
+    }
     nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
     chatIds=chats.map(c=>c.id);
     totalMessages=Number(data.totalMessages||rows.length);
@@ -143,6 +160,14 @@
         n.tx=chat.tx+Math.cos(a)*r;n.ty=chat.ty+Math.sin(a)*r;
         if(!Number.isFinite(n.x)){n.x=n.tx;n.y=n.ty;}
       });
+    }
+    for(const fact of nodes.filter(n=>n.kind==='fact')){
+      const source=nodes.find(n=>n.messageId===fact.sourceId);
+      if(!source)continue;
+      const angle=fact.factId*2.399963229728653;
+      fact.tx=source.tx+Math.cos(angle)*11;
+      fact.ty=source.ty+Math.sin(angle)*11;
+      if(!Number.isFinite(fact.x)){fact.x=fact.tx;fact.y=fact.ty;}
     }
     // Stable de-overlap for semantic cluster anchors.
     for(let repeat=0;repeat<5;repeat++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
@@ -247,10 +272,10 @@
     }
     for(const n of nodes){
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
-      if(n.kind==='message'&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
+      if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
-      const size=core?22:cluster?12:chat?6.8:2.7;
-      const color=core?'#ee8a3c':palette[Math.abs(n.group||0)%palette.length];
+      const size=core?22:cluster?12:chat?6.8:n.kind==='fact'?4:2.7;
+      const color=core?'#ee8a3c':n.kind==='fact'?'#d7b17c':palette[Math.abs(n.group||0)%palette.length];
       ctx.shadowBlur=core?25:recalled.has(n.id)?22:isSelected?20:chat?9:3;
       ctx.shadowColor=color;
       ctx.fillStyle=core?'#251306':recalled.has(n.id)?'#ffe3ae':isSelected?'#ffcf9a':color;
@@ -320,7 +345,7 @@
   canvas.addEventListener('pointerup',e=>{
     if(!moved){
       const n=nearest(coord(e));selected=n;
-      info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
+      info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.kind==='fact'?'Кандидат факта · источник #'+n.sourceId+' · требует проверки: '+n.label:n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
       if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId}}));
       request();
     }
