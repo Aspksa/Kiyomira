@@ -70,7 +70,7 @@ function emptyMessages() {
   el('messages').innerHTML='<div class="empty"><span class="empty-symbol">狐</span><h2>Чем я могу помочь?</h2><p>Всё, что мы сохраняем, остаётся в SQLite на твоём устройстве.</p></div>';
 }
 function buttonBusy(value) {
-  window.KiyomiraBrain?.setBusy(value);
+  if(value)window.KiyomiraBrain?.setPhase('request');
   state.busy=value;
   el('send').disabled=value;
   el('stop-response').hidden=!value;
@@ -116,7 +116,7 @@ async function newChat() {
 async function updateStatus() {
   const result=await api('/api/status');
   const status=el('connection');
-  if(!state.busy)window.KiyomiraBrain?.setBusy(result.active>0);
+  if(result.active>0&&!state.busy)window.KiyomiraBrain?.setPhase('request');
   const active=result.provider==='cloud' && result.verified;
   status.className='status '+(active?'ok':result.provider==='unconfigured'?'err':'');
   status.textContent=result.provider==='demo'?'ДЕМО · тестовая модель':result.provider==='unconfigured'?'Cloud.ru не настроен':active?'Cloud.ru · модель подтверждена':'Cloud.ru · '+result.model+' · не проверен';
@@ -139,9 +139,11 @@ async function sendMessage(ev) {
     const {messages}=await api('/api/chats/'+id);
     el('messages').replaceChildren();
     for(const item of messages)message(item.роль,item.текст);
+    window.KiyomiraBrain?.setPhase('response');
     if(!result.reply)notice('Пустой ответ модели');
     await refreshChats();
   } catch(err) {
+    window.KiyomiraBrain?.setPhase('error');
     temp.remove();
     input.value=text;
     notice(err.message);
