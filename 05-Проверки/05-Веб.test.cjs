@@ -76,6 +76,12 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/getCorePosition/);
     assert.match(brainSource,/getSourceScreenPoints/);
     assert.match(brainSource,/drawStaticRings/);
+    // Category ring geometry is calculated from persisted topics/projects.
+    assert.match(brainSource,/categoryRings=categories\.map/);
+    assert.match(brainSource,/Math\.ceil\(ringCount\/12\)/);
+    assert.match(brainSource,/categoryRadius=334/);
+    assert.match(brainSource,/kind:'category'/);
+    assert.match(brainSource,/categoryRings\.length/);
     assert.match(brainSource,/semanticEdgeCount/);
     assert.match(brainSource,/setSelectedChat/);
     assert.match(brainSource,/brain-focus/);
