@@ -315,7 +315,10 @@ async function loadFacts() {
     const payload=await api('/api/memory/facts');
     const facts=payload.facts||[];
     const conflicts=payload.conflicts||[];
-    el('facts-summary').textContent=facts.length+' записей · '+conflicts.length+' возможных противоречий';
+    const stale=payload.stale||[];
+    const staleIds=new Set(stale.map(f=>f.ид));
+    el('facts-summary').textContent=facts.length+' записей · '+conflicts.length+
+      ' возможных противоречий · '+stale.length+' требуют проверки актуальности';
     if(!facts.length){const p=document.createElement('p');p.className='hint';
       p.textContent='Кандидатов пока нет. Например: «Я предпочитаю тёмную тему».';
       root.append(p);return;}
@@ -326,7 +329,7 @@ async function loadFacts() {
       name.textContent=fact.ключ+': '+fact.значение;
       const meta=document.createElement('p');meta.className='hint';
       meta.textContent='Источник #'+fact.источник_ид+
-        ' · '+fact.статус+' · '+fact.создано;
+        ' · '+fact.статус+' · '+fact.создано+(staleIds.has(fact.ид)?' · ПРОВЕРИТЬ АКТУАЛЬНОСТЬ':'');
       const actions=document.createElement('div');actions.className='fact-actions';
       for(const [label,status] of [['Подтвердить','подтверждено'],['Отклонить','отклонено']]){
         const button=document.createElement('button');button.type='button';
@@ -774,6 +777,16 @@ function initWorkspaceDivider() {
   });
   window.KiyomiraLayout={focus,getState:()=>({automatic,percent:Number(divider.getAttribute('aria-valuenow'))})};
 }
+
+// Inspectable local profiling without collecting private message content.
+window.KiyomiraDiagnostics={
+  async snapshot(){
+    const server=await api('/api/performance');
+    const canvas=window.KiyomiraBrain?.getViewportStats?.()||{};
+    const unity=window.KiyomiraUnity?.getStats?.()||{};
+    return {server,canvas,unity,workspace:window.KiyomiraLayout?.getState?.()||{}};
+  }
+};
 
 async function bootstrap() {
   initWorkspaceDivider();
