@@ -162,6 +162,16 @@
   function save(){
     try{localStorage.setItem('kiyomira.brain.camera',JSON.stringify({mode,zoom,x:pan.x,y:pan.y}));}catch{}
   }
+  function setPhase(next){
+    if(!['idle','request','response','error'].includes(next))return;
+    phase=next;phaseAt=now();active=next==='request';
+    if(next==='response')flashUntil=phaseAt+1450;
+    if(next==='error')flashUntil=phaseAt+1200;
+    live.textContent=next==='request'?'ГЕНЕРАЦИЯ ОТВЕТА':next==='response'?'ОТВЕТ ПОЛУЧЕН':next==='error'?'ОШИБКА':'ОЖИДАНИЕ';
+    live.classList.toggle('running',active);
+    live.classList.toggle('error',next==='error');
+    request();
+  }
   function draw(time){
     if(!width||!height)return;
     ctx.clearRect(0,0,width,height);
