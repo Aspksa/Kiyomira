@@ -46,6 +46,13 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const second=await request('/api/chats','POST',{title:'Другой чат'});
     const b=second.data.id;
     assert.notEqual(a,b);
+    assert.equal((await request('/api/status')).data.provider,'unconfigured');
+    const noCloud=await request('/api/chats/'+a+'/message','POST',{text:'Привет, Kiyomira!'});
+    assert.equal(noCloud.status,409);
+    assert.match(noCloud.data.error,/Cloud.ru не настроен/);
+    assert.equal((await request('/api/chats/'+a)).data.messages.length,0);
+    await request('/api/settings','POST',{demoMode:true});
+    assert.equal((await request('/api/status')).data.provider,'unconfigured');
     const answer=await request('/api/chats/'+a+'/message','POST',{text:'Привет, Kiyomira!'});
     assert.equal(answer.status,200);
     assert.match(answer.data.reply,/Привет, Kiyomira!/);
@@ -57,12 +64,13 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     await request('/api/chats/'+a,'PATCH',{title:'Переименованный'});
     assert.equal((await request('/api/chats')).data.chats.find(x=>x.ид===a).название,'Переименованный');
     const key='секрет_НИКОГДА_НЕ_ВОЗВРАЩАТЬ';
-    const save=await request('/api/settings','POST',{apiKey:key,model:'example-model'});
+    const save=await request('/api/settings','POST',{apiKey:key,model:'example-model',demoMode:false});
     assert.equal(save.status,200);
     assert.equal(save.data.keyPresent,true);
     assert.equal(JSON.stringify(save.data).includes(key),false);
     assert.equal(JSON.stringify((await request('/api/settings')).data).includes(key),false);
     assert.equal((await request('/api/status')).data.provider,'cloud');
+    assert.equal((await request('/api/status')).data.verified,false);
     await request('/api/settings','POST',{clearKey:true});
     assert.equal((await request('/api/status')).data.provider,'demo');
     await request('/api/chats/'+b,'DELETE');
@@ -81,6 +89,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const result=await reload.json();
     assert.equal(result.model,'example-model');
     assert.equal(result.keyPresent,false);
+    assert.equal(result.demoMode,false);
   } finally {
     if(app)await app.close();
     if(oldDb===undefined)delete process.env.KIYOMIRA_DB_PATH;else process.env.KIYOMIRA_DB_PATH=oldDb;
