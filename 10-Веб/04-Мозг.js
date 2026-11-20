@@ -36,6 +36,7 @@
     canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
     ctx.setTransform(scale,0,0,scale,0,0);
     draw(now());
+    window.KiyomiraUnity?.relayout();
   }
   function positionNodes(){
     const total=chatIds.length;
@@ -386,6 +387,7 @@
     if(motion.matches){for(const n of nodes){n.x=n.tx;n.y=n.ty;}if(cameraTarget){pan=cameraTarget;cameraTarget=null;}return false;}
     let moving=false;
     if(cameraTarget){
+      window.KiyomiraUnity?.relayout();
       const dx=cameraTarget.x-pan.x,dy=cameraTarget.y-pan.y;
       if(Math.abs(dx)+Math.abs(dy)>.7){pan.x+=dx*.16;pan.y+=dy*.16;moving=true;}
       else{pan=cameraTarget;cameraTarget=null;save();}
@@ -417,7 +419,7 @@
     if(!pointer){const candidate=nearest(coord(e));if(candidate?.id!==hovered?.id){hovered=candidate;request();}return;}
     const p=coord(e),dx=p.x-pointer.x,dy=p.y-pointer.y;
     if(Math.abs(dx)+Math.abs(dy)>2)moved=true;
-    if(moved){cameraTarget=null;pan.x+=dx;pan.y+=dy;request();}
+    if(moved){cameraTarget=null;pan.x+=dx;pan.y+=dy;request();window.KiyomiraUnity?.relayout();}
     pointer=p;
   });
   canvas.addEventListener('pointerup',e=>{
@@ -431,7 +433,7 @@
   });
   canvas.addEventListener('pointercancel',()=>{pointer=null;});
   canvas.addEventListener('pointerleave',()=>{hovered=null;request();});
-  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();},{passive:false});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.4,3.5);request();save();window.KiyomiraUnity?.relayout();},{passive:false});
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
   document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;request();save();});
   document.getElementById('brain-focus')?.addEventListener('click',()=>{
@@ -464,6 +466,7 @@
   new ResizeObserver(resize).observe(host);
   window.KiyomiraBrain={
     update,setPhase,eventActivity,
+    getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   setMode(mode);resize();
