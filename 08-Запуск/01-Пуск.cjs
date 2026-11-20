@@ -13,6 +13,7 @@ const данные = join(корень, '06-Данные');
 const журнал = join(данные, 'журнал-запуска.log');
 const блокировка = join(данные, 'запуск.lock');
 const вход = join(корень, '01-Ядро', '01-Запуск.ts');
+const веб = join(корень, '08-Запуск', '04-ВебСервер.cjs');
 let владеемБлокировкой = false;
 let содержаниеБлокировки = '';
 
@@ -103,18 +104,55 @@ async function запустить() {
   }
   console.log('[Kiyomira] Предпроверка:', readiness.sqlite === 'ok' ? 'SQLite исправна' : 'Новая база SQLite');
   журналировать('Предпроверка: ' + readiness.sqlite + '; Node ' + process.version);
+  const режимCLI = process.env.KIYOMIRA_MODE === 'cli';
+  if (!режимCLI && !existsSync(веб)) throw new Error('Не найден локальный веб-сервер Kiyomira');
   const дочерний = spawn(process.execPath, [
-    '--experimental-transform-types', вход, '--interactive'
+    '--experimental-transform-types', режимCLI ? вход : веб,
+    ...(режимCLI ? ['--interactive'] : [])
   ], {
     cwd: корень,
-    stdio: 'inherit',
+    stdio: режимCLI ? 'inherit' : ['inherit','inherit','inherit','ipc'],
     shell: false,
     windowsHide: false,
-    env: { ...process.env, KIYOMIRA_INTERACTIVE: '1' }
+    env: { ...process.env, KIYOMIRA_INTERACTIVE: режимCLI ? '1' : '0' }
   });
+  let сообщениеОГотовности = false;
+  let остановкаЗапрошена = false;
+  const остановитьДочерний = () => {
+    if (остановкаЗапрошена) return;
+    остановкаЗапрошена = true;
+    if (режимCLI) дочерний.kill('SIGTERM');
+    else if (дочерний.connected) дочерний.send({type:'shutdown'});
+    else дочерний.kill('SIGTERM');
+  };
+  process.on('SIGINT', остановитьДочерний);
+  process.on('SIGTERM', остановитьДочерний);
+  const открыть = url => {
+    if (process.env.KIYOMIRA_NO_BROWSER === '1' || !/^http:\/\/127\.0\.0\.1:\d+$/.test(url)) return;
+    try {
+      if (process.platform === 'win32') {
+        const p = spawn('powershell.exe',['-NoProfile','-Command','Start-Process','-FilePath',url],{stdio:'ignore',windowsHide:true,detached:true});
+        p.unref();
+      } else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
+        const p = spawn('xdg-open',[url],{stdio:'ignore',detached:true});
+        p.on('error',()=>{});
+        p.unref();
+      }
+    } catch { журналировать('Не удалось автоматически открыть браузер'); }
+  };
+  if (!режимCLI) {
+    дочерний.on('message', сообщение => {
+      if (сообщение?.type !== 'ready' || сообщениеОГотовности) return;
+      сообщениеОГотовности = true;
+      журналировать('Веб-сервер готов');
+      открыть(сообщение.url);
+    });
+  }
   return await new Promise((resolvePromise, rejectPromise) => {
     дочерний.once('error', rejectPromise);
     дочерний.once('close', (код, сигнал) => {
+      process.off('SIGINT', остановитьДочерний);
+      process.off('SIGTERM', остановитьДочерний);
       resolvePromise(код === null ? (сигнал ? 130 : 1) : код);
     });
   });
