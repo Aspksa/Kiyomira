@@ -113,7 +113,7 @@ async function updateStatus() {
   const status=el('connection');
   const active=result.provider==='cloud' && result.verified;
   status.className='status '+(active?'ok':result.provider==='unconfigured'?'err':'');
-  status.textContent=result.provider==='demo'?'ДЕМО · тестовая модель':result.provider==='unconfigured'?'Cloud.ru не настроен':active?'Cloud.ru проверен · '+result.model:'Cloud.ru · '+result.model+' · не проверен';
+  status.textContent=result.provider==='demo'?'ДЕМО · тестовая модель':result.provider==='unconfigured'?'Cloud.ru не настроен':active?'Cloud.ru · модель подтверждена':'Cloud.ru · '+result.model+' · не проверен';
   el('subtitle').textContent=result.provider==='demo'?'Только тестовые ответы':result.provider==='unconfigured'?'Укажите ключ и модель Cloud.ru':'Локальная память · Cloud.ru';
   if(result.lastError && !state.busy) notice(result.lastError);
 }
@@ -200,6 +200,15 @@ async function testCloud() {
     await updateStatus();
   }catch(err){feedback(err.message);}
 }
+async function testGeneration() {
+  if(!confirm('Проверить настоящий ответ модели Cloud.ru? Будет отправлен короткий запрос, который может тарифицироваться Cloud.ru.'))return;
+  try {
+    feedback('Запрашиваю короткий настоящий ответ Cloud.ru...');
+    const result=await api('/api/test-generation','POST',{});
+    feedback('Реальный ответ модели '+result.model+': '+result.reply,true);
+    await updateStatus();
+  }catch(err){feedback(err.message);await updateStatus().catch(()=>{});}
+}
 async function search() {
   const q=el('search-input').value.trim();
   const root=el('search-results');root.replaceChildren();
@@ -234,6 +243,7 @@ async function bootstrap() {
   el('settings-form').addEventListener('submit',ev=>{void saveSettings(ev);});
   el('refresh-models').addEventListener('click',()=>{void models();});
   el('test-cloud').addEventListener('click',()=>{void testCloud();});
+  el('test-generation').addEventListener('click',()=>{void testGeneration();});
   el('clear-key').addEventListener('click',async()=>{
     if(!confirm('Сбросить API-ключ только в текущем процессе?'))return;
     try{await api('/api/settings','POST',{clearKey:true});await loadSettings();await updateStatus();}catch(err){feedback(err.message);}
