@@ -405,3 +405,25 @@ html,body{height:100%;overflow:hidden}
   .unified-workspace .flow-pulse{animation:none!important;opacity:0}
   .cognitive-flow{transition:none}
 }
+
+/* Kiyomira 5.0: a shared, real-event state palette. */
+.unified-workspace{--cognitive-activity:#c18a53}
+.unified-workspace[data-activity="контекст"]{--cognitive-activity:#85baa6}
+.unified-workspace[data-activity="генерация"]{--cognitive-activity:#d9a568}
+.unified-workspace[data-activity="сохранение"]{--cognitive-activity:#85baa6}
+.unified-workspace[data-activity="ответ"]{--cognitive-activity:#e7c78c}
+.unified-workspace[data-activity="ошибка"]{--cognitive-activity:#e0795f}
+.unified-workspace .brain-live.running{color:var(--cognitive-activity);border-color:var(--cognitive-activity)}
+.unified-workspace .message-sources{
+  border:1px solid rgba(130,180,159,.25);background:rgba(130,180,159,.07);
+  color:#9ac5af;font-size:11px;margin-top:8px;padding:5px 9px;text-align:left;
+}
+.unified-workspace .message-sources:hover{border-color:#9ac5af;color:#d1e7d7}
+.unified-workspace .message.source-active{
+  outline:1px solid rgba(255,207,154,.6);outline-offset:2px;
+  background:rgba(238,138,60,.05);
+}
+.source-history-note{font-size:11px;color:#ad9d89;padding:7px 3px}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{scroll-behavior:auto}
+}

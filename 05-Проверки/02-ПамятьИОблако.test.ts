@@ -271,3 +271,31 @@ test('opt-in embedding adapter and SQLite vector cache work without live Cloud.r
     assert.equal(memory.статусВекторов(МОДЕЛЬ_ЭМБЕДДИНГОВ).индексировано,0);
   }finally{memory.закрыть();}
 });
+
+
+test('Kiyomira 5 provenance remains linked to actual answer and survives reopen',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'k5-provenance-'));
+  const path=join(dir,'memory.sqlite');
+  let answerId=0,sourceId=0,chatId=0;
+  try{
+    const memory=new ПамятьДиалога(40,path);
+    try{
+      chatId=memory.создатьДиалог('Источники');
+      memory.добавитьПару('Проект: Kiyomira','Принято',chatId);
+      sourceId=memory.сообщенияДиалога(chatId)[0].ид;
+      memory.добавитьПару('Что за проект?','Это Kiyomira',chatId,[sourceId,sourceId,999999]);
+      const messages=memory.сообщенияДиалога(chatId);
+      answerId=messages.at(-1)!.ид;
+      assert.deepEqual(memory.источникиОтвета(answerId),[sourceId]);
+      assert.equal(memory.сообщениеПоИд(sourceId)?.текст,'Проект: Kiyomira');
+      assert.equal(memory.сообщениеПоИд(999999),null);
+    }finally{memory.закрыть();}
+    const memory2=new ПамятьДиалога(40,path);
+    try{
+      assert.deepEqual(memory2.источникиОтвета(answerId),[sourceId]);
+      memory2.удалитьДиалог(chatId);
+      assert.deepEqual(memory2.источникиОтвета(answerId),[]);
+      assert.equal(memory2.сообщениеПоИд(sourceId),null);
+    }finally{memory2.закрыть();}
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});

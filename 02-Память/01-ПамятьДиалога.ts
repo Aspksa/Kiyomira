@@ -40,6 +40,15 @@ export class ПамятьДиалога {
       this.база.exec('ALTER TABLE сообщения ADD COLUMN диалог_ид INTEGER');
     }
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_сообщения_диалог ON сообщения(диалог_ид, ид)');
+    // Source links belong to the completed assistant message; not speculative
+    // model citations. Every ID is resolved from an actual SQLite row.
+    this.база.exec(`CREATE TABLE IF NOT EXISTS источники_ответов (
+      ответ_ид INTEGER NOT NULL,
+      источник_ид INTEGER NOT NULL,
+      PRIMARY KEY (ответ_ид, источник_ид)
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_источники_ответов_источник ON источники_ответов(источник_ид)');
+
     this.база.exec('CREATE TABLE IF NOT EXISTS веб_настройки (ключ TEXT PRIMARY KEY, значение TEXT NOT NULL)');
     this.база.exec(`CREATE TABLE IF NOT EXISTS факты_кандидаты (
       ид INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,7 +117,7 @@ export class ПамятьДиалога {
     this.вставить.run(роль, текст);
   }
 
-  добавитьПару(запрос: string, ответ: string, диалогИд?: number): void {
+  добавитьПару(запрос: string, ответ: string, диалогИд?: number, источники:number[]=[]): void {
     if (!запрос.trim() || !ответ.trim()) throw new Error('Пустое сообщение');
     if (диалогИд !== undefined && !this.существуетДиалог(диалогИд)) throw new Error('Диалог не найден');
     this.база.exec('BEGIN IMMEDIATE');
@@ -119,7 +128,12 @@ export class ПамятьДиалога {
       } else {
         const записьПользователя=this.вставитьВДиалог.run('пользователь', запрос, диалогИд);
         this.индексироватьФакт(Number(записьПользователя.lastInsertRowid),диалогИд,запрос);
-        this.вставитьВДиалог.run('ассистент', ответ, диалогИд);
+        const result=this.вставитьВДиалог.run('ассистент', ответ, диалогИд);
+        const answerId=Number(result.lastInsertRowid);
+        const unique=new Set(источники.filter(id=>Number.isSafeInteger(id)&&id>0).slice(0,200));
+        const check=this.база.prepare('SELECT ид FROM сообщения WHERE ид=?');
+        const addLink=this.база.prepare('INSERT OR IGNORE INTO источники_ответов(ответ_ид,источник_ид) VALUES(?,?)');
+        for(const source of unique)if(check.get(source))addLink.run(answerId,source);
         this.база.prepare('UPDATE диалоги SET обновлено=CURRENT_TIMESTAMP WHERE ид=?').run(диалогИд);
       }
       this.база.exec('COMMIT');
@@ -153,6 +167,19 @@ export class ПамятьДиалога {
       GROUP BY д.ид ORDER BY д.обновлено DESC, д.ид DESC LIMIT 250`).all() as Диалог[];
   }
 
+  источникиОтвета(ответИд:number):number[]{
+    if(!Number.isSafeInteger(ответИд)||ответИд<1)return [];
+    return (this.база.prepare('SELECT источник_ид FROM источники_ответов WHERE ответ_ид=? ORDER BY источник_ид LIMIT 200')
+      .all(ответИд) as {источник_ид:number}[]).map(x=>x.источник_ид);
+  }
+
+  сообщениеПоИд(ид:number): (Запись & {диалог_ид:number})|null{
+    if(!Number.isSafeInteger(ид)||ид<1)return null;
+    const row=this.база.prepare('SELECT ид,диалог_ид,роль,текст,время FROM сообщения WHERE ид=?')
+      .get(ид) as (Запись & {диалог_ид:number})|undefined;
+    return row&&row.диалог_ид?row:null;
+  }
+
   сообщенияДиалога(ид: number): Запись[] {
     if (!this.существуетДиалог(ид)) throw new Error('Диалог не найден');
     return (this.база.prepare('SELECT ид, роль, текст, время FROM сообщения WHERE диалог_ид=? ORDER BY ид DESC LIMIT 200').all(ид) as Запись[]).reverse();
@@ -169,6 +196,7 @@ export class ПамятьДиалога {
     if (!this.существуетДиалог(ид)) throw new Error('Диалог не найден');
     this.база.exec('BEGIN IMMEDIATE');
     try {
+      this.база.prepare('DELETE FROM источники_ответов WHERE ответ_ид IN (SELECT ид FROM сообщения WHERE диалог_ид=?) OR источник_ид IN (SELECT ид FROM сообщения WHERE диалог_ид=?)').run(ид,ид);
       this.база.prepare('DELETE FROM векторные_индексы WHERE сообщение_ид IN (SELECT ид FROM сообщения WHERE диалог_ид=?)').run(ид);
       this.база.prepare('DELETE FROM история_фактов WHERE факт_ид IN (SELECT ид FROM факты_кандидаты WHERE диалог_ид=?)').run(ид);
       this.база.prepare('DELETE FROM факты_кандидаты WHERE диалог_ид=?').run(ид);
@@ -416,6 +444,6 @@ export class ПамятьДиалога {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM источники_ответов; DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
   закрыть(): void { this.база.close(); }
 }

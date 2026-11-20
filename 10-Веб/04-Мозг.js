@@ -19,6 +19,7 @@
   let flashUntil=0;
   let totalMessages=0,conflicts=[],factConflicts=[],recalled=new Set(),focus=false,phaseChat=null;
   let cameraTarget=null,hovered=null,sectorAngles=[];
+  let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const now=()=>performance.now();
 
@@ -140,7 +141,7 @@
     conflicts=(data.candidates||[]).filter(c=>nodes.some(n=>n.messageId===c.a)&&nodes.some(n=>n.messageId===c.b));
     selected=selected?nodes.find(n=>n.id===selected.id)||null:null;
     count.textContent=totalMessages+' сообщений · '+groups.length+' кластеров · показано '+rows.length+' · '+conflicts.length+' возможных конфликтов';
-    if(!selected)info.textContent=rows.length?'Темы определены автоматически. Нажмите на узел для источника.':'Память пуста. Начните разговор.';
+    if(!selected)info.textContent=rows.length?'Нажмите на сообщение, чтобы открыть его в чате.':'Память пуста. Начните разговор.';
     layout();
     if(previous.size>1)flashUntil=now()+650;
     request();
@@ -348,7 +349,8 @@
     }
     for(const n of nodes){
       const core=n.kind==='core',chat=n.kind==='chat',cluster=n.kind==='cluster',isSelected=selected?.id===n.id;
-      const faded=hovered&&n.kind!=='core'&&n.group!==hovered.group;
+      const faded=(hovered&&n.kind!=='core'&&n.group!==hovered.group)||
+        (!hovered&&activeChat&&n.kind!=='core'&&n.chatId&&n.chatId!==activeChat);
       if(faded)ctx.globalAlpha=.23;
       if((n.kind==='message'||n.kind==='fact')&&nodes.length>160&&zoom<.8&&!recalled.has(n.id)&&!isSelected)continue;
       if(chat&&nodes.length>600&&zoom<.55&&!isSelected)continue;
@@ -426,7 +428,7 @@
     if(!moved){
       const n=nearest(coord(e));selected=n;
       info.textContent=n?n.kind==='core'?'Ядро Kiyomira — этапы реальных запросов':n.kind==='fact'?'Кандидат факта · источник #'+n.sourceId+' · требует проверки: '+n.label:n.label||'Сообщение':'Выберите узел, чтобы открыть диалог.';
-      if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId}}));
+      if(n?.chatId)window.dispatchEvent(new CustomEvent('kiyomira-brain-select',{detail:{chatId:n.chatId,messageId:n.messageId||n.sourceId||null}}));
       request();
     }
     pointer=null;save();
@@ -466,6 +468,19 @@
   new ResizeObserver(resize).observe(host);
   window.KiyomiraBrain={
     update,setPhase,eventActivity,
+    focusSources(ids,chatId){
+      recalled=new Set((Array.isArray(ids)?ids:[]).filter(Number.isSafeInteger).map(x=>'m'+x));
+      activeChat=chatId||null;
+      const node=nodes.find(n=>recalled.has(n.id));
+      if(node&&zoom>=.8&&!pointer){
+        cameraTarget={x:-node.x*zoom,y:-node.y*zoom};
+      }
+      flashUntil=now()+1600;request();
+    },
+    setSelectedChat(chatId){
+      activeChat=chatId||null;
+      request();
+    },
     getCorePosition(){const box=canvas.getBoundingClientRect();return {x:box.left+box.width/2+pan.x,y:box.top+box.height/2+pan.y};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
