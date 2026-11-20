@@ -378,3 +378,75 @@ test('Восемь видов памяти, группировка подтве�
     assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
   }finally{memory.закрыть();}
 });
+
+
+test('Постоянный индекс фактов перестраивает связи после исправлений и удаления',()=>{
+  const memory=new ПамятьДиалога(70);
+  try{
+    const chat=memory.создатьДиалог('Рёбра');
+    memory.добавитьПару('Стек: SQLite','ОК',chat);
+    memory.добавитьПару('Хранилище: SQLite','ОК',chat);
+    const facts=memory.кандидатыФактов(10);
+    assert.equal(facts.length,2);
+    for(const f of facts)memory.изменитьФакт(f.ид,'подтверждено');
+    const edges=memory.индексированныеСвязиФактов();
+    assert.equal(edges.length,1);
+    assert.equal(edges[0].тип,'общая_тема');
+    assert.equal(memory.соседиПодтверждённогоФакта(facts[0].ид).length,1);
+    memory.изменитьФакт(facts[0].ид,'подтверждено','PostgreSQL');
+    assert.equal(memory.соседиПодтверждённогоФакта(facts[0].ид).length,0);
+    assert.equal(memory.индексированныеСвязиФактов().length,0);
+    memory.удалитьДиалог(chat);
+    assert.deepEqual(memory.индексированныеСвязиФактов(),[]);
+    assert.equal(memory.проверитьЦелостностьПамяти().осиротевших_индексов,0);
+  }finally{memory.закрыть();}
+});
+
+test('Обход фонового индекса фактов восстанавливает контрольную точку',async()=>{
+  const {mkdtempSync,rmSync}=await import('node:fs');
+  const {tmpdir}=await import('node:os');
+  const {join}=await import('node:path');
+  const folder=mkdtempSync(join(tmpdir(),'kiyomira-edges-'));
+  const path=join(folder,'memory.sqlite');
+  try{
+    const memory=new ПамятьДиалога(50,path);
+    const chat=memory.создатьДиалог('Индекс');
+    memory.добавитьПару('База: SQLite','ОК',chat);
+    memory.добавитьПару('Стек: SQLite','ОК',chat);
+    for(const f of memory.кандидатыФактов())memory.изменитьФакт(f.ид,'подтверждено');
+    assert.equal(memory.обработатьФоновыеРебра(1).обработано,1);
+    memory.закрыть();
+    const reopened=new ПамятьДиалога(50,path);
+    assert.equal(reopened.обработатьФоновыеРебра(2).обработано,1);
+    assert.equal(reopened.обработатьФоновыеРебра(2).обработано,0);
+    assert.equal(reopened.индексированныеСвязиФактов().length,1);
+    reopened.закрыть();
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test('Единый поиск сохраняет различие ID документов и источников сообщений',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Единый');
+    memory.добавитьПару('Система Kiyomira работает на SQLite','ОК',chat);
+    const saved=memory.индексироватьДокумент('Kiyomira', 'SQLite архитектура проекта');
+    const matches=memory.единыйПоискПамяти('Kiyomira SQLite',20);
+    assert.ok(matches.some(m=>m.тип==='сообщение'&&m.источник_ид!==null));
+    assert.ok(matches.some(m=>m.тип==='документ'&&m.ид===saved.id&&m.источник_ид===null));
+    assert.ok(memory.профильПоиска().unifiedSearch.samples>=1);
+  }finally{memory.закрыть();}
+});
+
+test('Поиск по времени использует точные даты, без предположений о вчера',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Эпизоды');
+    memory.добавитьПару('Встреча 2026-11-20: обсудили проект','ОК',chat);
+    memory.добавитьПару('Вчера была встреча','ОК',chat);
+    const rows=memory.поискПоВремени('2026-11-19','2026-11-20');
+    assert.equal(rows.length,1);
+    assert.equal(rows[0].время_события,'2026-11-20');
+    assert.throws(()=>memory.поискПоВремени('2026-02-30','2026-11-20'));
+    assert.throws(()=>memory.поискПоВремени('2026-12-01','2026-11-20'));
+  }finally{memory.закрыть();}
+});

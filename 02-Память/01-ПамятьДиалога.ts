@@ -145,6 +145,18 @@ export class ПамятьДиалога {
       имя TEXT PRIMARY KEY, последний_ид INTEGER NOT NULL DEFAULT 0
     )`);
     this.база.exec("INSERT OR IGNORE INTO память_фоновые_курсоры(имя,последний_ид) VALUES('messages',0)");
+    this.база.exec("INSERT OR IGNORE INTO память_фоновые_курсоры(имя,последний_ид) VALUES('facts',0)");
+    this.база.exec(`CREATE TABLE IF NOT EXISTS память_ребра_фактов (
+      a INTEGER NOT NULL, b INTEGER NOT NULL,
+      тип TEXT NOT NULL, сила REAL NOT NULL,
+      источник_a INTEGER NOT NULL, источник_b INTEGER NOT NULL,
+      PRIMARY KEY(a,b), CHECK(a<b)
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_память_ребра_b ON память_ребра_фактов(b,a)');
+    this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_память_ребра_удаление
+      AFTER DELETE ON факты_кандидаты BEGIN
+      DELETE FROM память_ребра_фактов WHERE a=old.ид OR b=old.ид;
+    END`);
     this.база.exec(`CREATE TABLE IF NOT EXISTS память_сущности_индекс (
       источник_ид INTEGER NOT NULL, тип TEXT NOT NULL, название TEXT NOT NULL,
       PRIMARY KEY(источник_ид,тип,название)
@@ -467,9 +479,77 @@ export class ПамятьДиалога {
       (SELECT count(*) FROM память_сущности_индекс e LEFT JOIN сообщения s ON s.ид=e.источник_ид WHERE s.ид IS NULL)+
       (SELECT count(*) FROM память_типы_индекс t LEFT JOIN сообщения s ON s.ид=t.источник_ид WHERE s.ид IS NULL)+
       (SELECT count(*) FROM память_отношения_индекс r LEFT JOIN сообщения s ON s.ид=r.источник_ид WHERE s.ид IS NULL)+
-      (SELECT count(*) FROM память_эпизоды_индекс p LEFT JOIN сообщения s ON s.ид=p.источник_ид WHERE s.ид IS NULL) AS n`
+      (SELECT count(*) FROM память_эпизоды_индекс p LEFT JOIN сообщения s ON s.ид=p.источник_ид WHERE s.ид IS NULL)+
+      (SELECT count(*) FROM память_ребра_фактов e
+        LEFT JOIN факты_кандидаты a ON a.ид=e.a
+        LEFT JOIN факты_кандидаты b ON b.ид=e.b
+        WHERE a.ид IS NULL OR b.ид IS NULL) AS n`
     ).get() as {n:number}).n;
     return {sqlite:check.every(row=>row.quick_check==='ok'),осиротевших_индексов:orphans};
+  }
+
+  // Cacheable, inspectable evidence graph. A row is an observed relation
+  // between approved facts, never proof of causation or automatic approval.
+  private индексироватьРебраФакта(ид:number){
+    this.база.prepare('DELETE FROM память_ребра_фактов WHERE a=? OR b=?').run(ид,ид);
+    const fact=this.база.prepare(`SELECT ид,источник_ид,ключ,значение,статус
+      FROM факты_кандидаты WHERE ид=? AND статус='подтверждено'`
+    ).get(ид) as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string}|undefined;
+    if(!fact)return;
+    const neighbours=this.база.prepare(`SELECT ид,источник_ид,ключ,значение,статус
+      FROM факты_кандидаты WHERE статус='подтверждено'
+      AND ид!=? AND (ключ=? OR значение=?) ORDER BY ид DESC LIMIT 160`
+    ).all(ид,fact.ключ,fact.значение) as {ид:number;источник_ид:number;ключ:string;значение:string;статус:string}[];
+    const put=this.база.prepare(`INSERT OR REPLACE INTO память_ребра_фактов
+      (a,b,тип,сила,источник_a,источник_b) VALUES(?,?,?,?,?,?)`);
+    for(const candidate of neighbours){
+      const edge=определитьСвязьФактов(fact,candidate);
+      if(!edge||!edge.подтверждено)continue;
+      const first=fact.ид<candidate.ид?fact:candidate;
+      const second=first===fact?candidate:fact;
+      put.run(first.ид,second.ид,edge.тип,edge.сила,first.источник_ид,second.источник_ид);
+    }
+  }
+
+  // Background rebuild for approved facts from earlier app versions.
+  обработатьФоновыеРебра(лимит=8){
+    const cap=Math.max(1,Math.min(16,Math.trunc(лимит)||8));
+    const cursor=(this.база.prepare(
+      "SELECT последний_ид FROM память_фоновые_курсоры WHERE имя='facts'"
+    ).get() as {последний_ид:number}).последний_ид;
+    const rows=this.база.prepare(`SELECT ид FROM факты_кандидаты
+      WHERE статус='подтверждено' AND ид>? ORDER BY ид LIMIT ?`
+    ).all(cursor,cap) as {ид:number}[];
+    if(!rows.length)return {обработано:0,последний_ид:cursor};
+    const start=performance.now();
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      for(const row of rows)this.индексироватьРебраФакта(row.ид);
+      const last=rows[rows.length-1].ид;
+      this.база.prepare("UPDATE память_фоновые_курсоры SET последний_ид=? WHERE имя='facts'").run(last);
+      this.база.exec('COMMIT');
+      this.invalidate();
+      this.recordTime('backgroundGraph',start);
+      return {обработано:rows.length,последний_ид:last};
+    }catch(error){this.база.exec('ROLLBACK');throw error;}
+  }
+
+  соседиПодтверждённогоФакта(ид:number,лимит=20){
+    if(!Number.isSafeInteger(ид)||ид<1)return [];
+    return this.база.prepare(`SELECT e.a,e.b,e.тип,e.сила,e.источник_a,e.источник_b
+      FROM память_ребра_фактов e
+      JOIN факты_кандидаты a ON a.ид=e.a AND a.статус='подтверждено'
+      JOIN факты_кандидаты b ON b.ид=e.b AND b.статус='подтверждено'
+      WHERE (e.a=? OR e.b=?) AND e.тип!='противоречие'
+      ORDER BY e.сила DESC,e.b DESC LIMIT ?`
+    ).all(ид,ид,Math.max(1,Math.min(100,Math.trunc(лимит)||20)));
+  }
+
+  индексированныеСвязиФактов(лимит=100){
+    return this.база.prepare(`SELECT a,b,тип,сила,источник_a,источник_b
+      FROM память_ребра_фактов ORDER BY b DESC LIMIT ?`
+    ).all(Math.max(1,Math.min(500,Math.trunc(лимит)||100))) as
+      {a:number;b:number;тип:string;сила:number;источник_a:number;источник_b:number}[];
   }
 
   кандидатыФактов(лимит=200){
@@ -504,6 +584,7 @@ export class ПамятьДиалога {
         .run(статус,actual,ид);
       this.база.prepare('INSERT INTO история_фактов(факт_ид,действие,статус,значение) VALUES(?,?,?,?)')
         .run(ид,actual===old.значение?'проверка':'исправление',статус,actual);
+      this.индексироватьРебраФакта(ид);
       this.база.exec('COMMIT');
       this.invalidate();
       return {ид,статус,значение:actual,источник_ид:old.источник_ид};
@@ -738,6 +819,48 @@ export class ПамятьДиалога {
       previous.push(row);if(previous.length>8)previous.shift();seen.set(row.ключ,previous);
     }
     return results;
+  }
+
+  // A bounded, cross-memory candidate list. This does not make unverified
+  // relations trusted facts. IDs preserve their original namespaces.
+  единыйПоискПамяти(запрос:string,лимит=12){
+    const start=performance.now();
+    const cap=Math.max(1,Math.min(30,Math.trunc(лимит)||12));
+    const messages=this.поискГибридный(запрос,8).map(row=>({
+      тип:'сообщение' as const,ид:row.ид,источник_ид:row.ид,
+      название:row.текст.slice(0,120),балл:row.балл,подтверждено:false
+    }));
+    const docs=this.поискДокументов(запрос,4).map(row=>({
+      тип:'документ' as const,ид:row.ид,источник_ид:null as number|null,
+      название:row.название,балл:row.балл,подтверждено:false
+    }));
+    const facts=this.подтверждённыеДляКонтекста(запрос,8).map(row=>({
+      тип:'факт' as const,ид:row.ид,источник_ид:row.источник_ид,
+      название:row.ключ+' — '+row.значение,балл:row.балл+2,подтверждено:true
+    }));
+    const route=маршрутПоиска(запрос,facts.length);
+    const relations=route.режим==='граф'?this.поискСмысловыхОтношений(запрос,4).map(row=>({
+      тип:'отношение' as const,ид:row.источники[0],источник_ид:row.источники[0],
+      название:row.субъект+' — '+row.тип+' — '+row.объект,
+      балл:row.балл,подтверждено:false
+    })):[];
+    const results=[...facts,...messages,...docs,...relations]
+      .sort((a,b)=>b.балл-a.балл||b.ид-a.ид).slice(0,cap);
+    this.recordTime('unifiedSearch',start);
+    return results;
+  }
+
+  поискПоВремени(с:string,по:string,лимит=50){
+    const valid=(v:string)=>/^20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(v)&&
+      !Number.isNaN(Date.parse(v+'T00:00:00Z'))&&
+      new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
+    if(!valid(с)||!valid(по)||с>по)throw new Error('Неверный диапазон дат');
+    return this.база.prepare(`SELECT p.источник_ид,p.категория,p.время_события,
+      p.статус_времени,p.время_записи
+      FROM память_эпизоды_индекс p JOIN сообщения s ON s.ид=p.источник_ид
+      WHERE p.время_события BETWEEN ? AND ?
+      ORDER BY p.время_события DESC,p.источник_ид DESC LIMIT ?`
+    ).all(с,по,Math.max(1,Math.min(100,Math.trunc(лимит)||50)));
   }
 
   поискГибридный(запрос:string,лимит=8){
