@@ -52,7 +52,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(noCloud.data.error,/Cloud.ru не настроен/);
     assert.equal((await request('/api/chats/'+a)).data.messages.length,0);
     await request('/api/settings','POST',{demoMode:true});
-    assert.equal((await request('/api/status')).data.provider,'unconfigured');
+    assert.equal((await request('/api/status')).data.provider,'demo');
     const answer=await request('/api/chats/'+a+'/message','POST',{text:'Привет, Kiyomira!'});
     assert.equal(answer.status,200);
     assert.match(answer.data.reply,/Привет, Kiyomira!/);
@@ -72,7 +72,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal((await request('/api/status')).data.provider,'cloud');
     assert.equal((await request('/api/status')).data.verified,false);
     await request('/api/settings','POST',{clearKey:true});
-    assert.equal((await request('/api/status')).data.provider,'demo');
+    assert.equal((await request('/api/status')).data.provider,'unconfigured');
     await request('/api/chats/'+b,'DELETE');
     assert.equal((await request('/api/chats/'+b)).status,404);
     assert.equal(existsSync(process.env.KIYOMIRA_DB_PATH),true);
