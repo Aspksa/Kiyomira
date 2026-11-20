@@ -696,8 +696,10 @@ export class ПамятьДиалога {
         matches.map(row=>'Источник #'+row.ид+': '+row.текст.slice(0,220)).join('\\n')
     }]:[];
     const docs=this.поискДокументов(запрос,2);
-    const relations=маршрутПоиска(запрос,0).режим==='граф'
-      ?this.поискСмысловыхОтношений(запрос,2):[];
+    // An explicit relationship question can search unapproved evidence even
+    // when no confirmed fact is available; it remains labelled as a candidate.
+    const relationIntent=/(?:связ|отношен|между|относится|использует|зависимост)/iu.test(запрос);
+    const relations=relationIntent?this.поискСмысловыхОтношений(запрос,2):[];
     const facts=this.подтверждённыеДляКонтекста(запрос,4);
     // Skip expensive graph traversal for queries with no supported anchors.
     // A direct query with multiple confirmed matches may still require the
