@@ -158,6 +158,23 @@ async function создатьВебСервер({ корень = resolve(__dirna
         последняяОшибка = listed ? '' : 'Выбранная модель отсутствует в списке Cloud.ru';
         return json(ответ,200,{ ok:listed, model:модель, listed, check:'models-only' });
       }
+      if (запрос.method === 'POST' && путь === '/api/test-generation') {
+        if (!ключ || !модель) throw ошибка('Укажите API-ключ и модель Cloud.ru');
+        if (демоРежим) throw ошибка('Выключите демо-режим для проверки реальной модели');
+        if (активные.size) throw ошибка('Дождитесь окончания текущего ответа',409);
+        try {
+          // An explicitly requested small, billable call. Never store it in dialogue history.
+          const reply = await new ОблачнаяМодель(ключ, модель)
+            .создатьОтвет([{ роль: 'пользователь', текст: 'Ответь одним словом: готово' }], undefined, 16);
+          проверено = true;
+          последняяОшибка = '';
+          return json(ответ,200,{ok:true,reply,model:модель});
+        } catch (err) {
+          проверено = false;
+          последняяОшибка = err instanceof Error ? err.message : 'Ошибка проверки генерации';
+          throw err;
+        }
+      }
       const chat = idИзПути(путь);
       if (chat) {
         if (!база.существуетДиалог(chat.ид)) throw ошибка('Диалог не найден',404);
