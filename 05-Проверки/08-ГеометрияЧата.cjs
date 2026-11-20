@@ -144,6 +144,37 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
       }
 
 
+      const painterCheck=await evaluate(`(async()=>{
+        if(typeof createStreamPainter!=='function')return {failure:'Painter not exposed'};
+        const root=document.getElementById('messages');
+        const article=document.createElement('article');
+        article.className='message assistant';
+        const body=document.createElement('div');
+        body.className='message-body';article.append(body);root.append(article);
+        root.scrollTop=root.scrollHeight;
+        const painter=createStreamPainter(article);
+        const text='Плавный поток из SQLite и модели Cloud.ru. '.repeat(20);
+        painter.add(text.slice(0,160));
+        painter.add(text.slice(160));
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        const before=painter.getStats();
+        painter.finish();
+        const after=painter.getStats();
+        const actual=body.textContent;
+        article.remove();
+        return {before,after,exact:actual===text,received:text.length};
+      })()`);
+      assert.ok(!painterCheck.failure,JSON.stringify(painterCheck));
+      assert.equal(painterCheck.exact,true,'stream completion must contain every received character');
+      assert.equal(painterCheck.after.displayed,painterCheck.received);
+      assert.ok(painterCheck.before.displayed<=painterCheck.received,'stream must not invent text');
+      const staticGraph=await evaluate(`(()=>{
+        const stats=window.KiyomiraBrain?.getViewportStats?.();
+        return {cache:stats?.staticRingBuilds,semantic:stats?.semanticEdgeCount,cost:stats?.lastDrawCost};
+      })()`);
+      assert.ok(staticGraph.cache>=1,'TRACKTOR ring geometry must cache a static Canvas layer');
+      assert.ok(Number.isFinite(staticGraph.cost),'render profiling must remain finite');
+
       const comets=await evaluate(`(()=>{
         const host=document.getElementById('workspace');
         const layer=document.getElementById('cognitive-comets');

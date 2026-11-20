@@ -217,28 +217,50 @@ async function streamReply(chatId,text,onChunk) {
 // model tokens; only text received from the actual Cloud.ru stream is rendered.
 function createStreamPainter(article){
   const body=article.querySelector('.message-body');
-  let full='',scheduled=false,stopped=false;
-  function paint(){
+  const scroller=el('messages');
+  const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+  let full='',shown=0,scheduled=false,stopped=false,renderCount=0;
+  let lastFrame=0,followBottom=true;
+  function paint(time){
     scheduled=false;
     if(stopped||!body.isConnected)return;
-    body.innerHTML=markdown(full);
-    const scroller=el('messages');
-    const remaining=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight;
-    if(remaining<180)scroller.scrollTop=scroller.scrollHeight;
+    // Follow only if the user had not scrolled away before the next render.
+    const nearBottom=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<120;
+    followBottom=followBottom&&nearBottom;
+    if(reduceMotion.matches)shown=full.length;
+    else {
+      const dt=Math.min(0.08,Math.max(.016,((time||performance.now())-lastFrame)/1000||.016));
+      const missing=full.length-shown;
+      // Mizuyori-inspired smooth catch-up: never invent text, accelerate if behind.
+      const count=Math.max(1,Math.ceil((100+missing*3)*dt));
+      shown=Math.min(full.length,shown+count);
+      if(shown<full.length){
+        const end=full.indexOf(' ',shown);
+        if(end>=0&&end-shown<=18)shown=end+1;
+      }
+    }
+    lastFrame=time||performance.now();
+    body.innerHTML=markdown(full.slice(0,shown));
+    renderCount++;
+    if(followBottom)scroller.scrollTop=scroller.scrollHeight;
+    if(shown<full.length)schedule();
+  }
+  function schedule(){
+    if(!scheduled&&!stopped){scheduled=true;requestAnimationFrame(paint);}
   }
   function add(part){
-    if(stopped)return;
-    full+=part;
-    if(!scheduled){scheduled=true;requestAnimationFrame(paint);}
+    if(stopped||!part)return;
+    full+=part;schedule();
   }
   function finish(){
     if(stopped)return;
-    paint();stopped=true;
+    shown=full.length;
+    // Make the final persisted response exact, without delaying the API lifecycle.
+    paint(performance.now());stopped=true;
   }
   function cancel(){stopped=true;}
-  return {add,finish,cancel};
+  return {add,finish,cancel,getStats:()=>({received:full.length,displayed:shown,renderCount})};
 }
-
 async function sendMessage(ev) {
   ev.preventDefault();
   if(state.busy || !state.selected)return;
@@ -267,6 +289,7 @@ async function sendMessage(ev) {
     await refreshChats();
   } catch(err) {
     window.KiyomiraBrain?.setPhase('error');
+    window.KiyomiraUnity?.signal('error');
     temp.remove();
     el('messages').querySelectorAll('[data-temporary="1"]').forEach(node=>node.remove());
     input.value=text;
@@ -520,6 +543,7 @@ function initCognitiveFlow(){
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
   const mobile=window.matchMedia('(max-width: 700px)');
   const effects=[];
+  let lastContextIds=[];
   let currentKind=null,layoutFrame=0,effectFrame=0,width=0,height=0,dpr=1;
   const point=(rect,root,x=.5,y=.5)=>({
     x:rect.left-root.left+rect.width*x,
@@ -582,6 +606,7 @@ function initCognitiveFlow(){
   const config={
     send:{duration:900,color:[88,196,255]},
     recall:{duration:1080,color:[92,223,182]},
+    'source-return':{duration:730,color:[92,223,182]},
     answer:{duration:1200,color:[244,194,120]},
     error:{duration:850,color:[226,108,98]}
   };
@@ -590,7 +615,8 @@ function initCognitiveFlow(){
     if(e.kind==='send')return {a:chat('send'),b:origin};
     if(e.kind==='answer'||e.kind==='error')return {a:origin,b:chat('answer')};
     const actual=sourcePoints(e.sources);
-    return actual[e.index]?{a:origin,b:actual[e.index]}:null;
+    const source=actual[e.index];
+    return source?(e.kind==='source-return'?{a:source,b:origin}:{a:origin,b:source}):null;
   }
   function frame(time){
     effectFrame=0;
@@ -638,24 +664,37 @@ function initCognitiveFlow(){
   }
   function signal(kind,sources=[]){
     if(!config[kind])return;
-    if(kind==='recall'&&(!Array.isArray(sources)||!sourcePoints(sources).length))return;
+    const ids=Array.isArray(sources)?[...new Set(sources.filter(Number.isSafeInteger))].slice(0,8):[];
+    if(kind==='send')lastContextIds=[];
+    if(kind==='recall')lastContextIds=ids;
+    const visibleIds=(kind==='recall'||kind==='source-return')
+      ?sourcePoints(kind==='source-return'?lastContextIds:ids).map(p=>p.id):[];
+    if(kind==='recall'&&!visibleIds.length)return;
     currentKind=kind;layout();
     workspace.classList.remove('flow-to-brain','flow-to-chat','flow-recall','flow-active');
     void pulse.getBoundingClientRect();
-    if(reduceMotion.matches||mobile.matches||document.hidden)return;
+    if(reduceMotion.matches||mobile.matches||document.hidden||!ctx)return;
     workspace.classList.add('flow-active',kind==='send'?'flow-to-brain':kind==='recall'?'flow-recall':'flow-to-chat');
-    if(!ctx)return;
-    const validIds=Array.isArray(sources)?[...new Set(sources.filter(Number.isSafeInteger))].slice(0,8):[];
-    // Recall is emitted only when SQLite actually returned IDs shown on the brain.
-    const visibleIds=kind==='recall'?sourcePoints(validIds).map(p=>p.id):[null];
-    if(kind==='recall'&&!visibleIds.length)return;
     const start=performance.now();
-    const selection=visibleIds.slice(0,8);
-    selection.forEach((id,index)=>{
-      effects.push({kind,sources:kind==='recall'?visibleIds:[],index,
-        color:config[kind].color,duration:config[kind].duration,started:start+index*70});
-    });
-    if(effects.length>12)effects.splice(0,effects.length-12);
+    if(kind==='answer'&&lastContextIds.length){
+      // Actual read sources travel back to core before the answer leaves for chat.
+      const returns=sourcePoints(lastContextIds).map(p=>p.id).slice(0,6);
+      returns.forEach((id,index)=>effects.push({
+        kind:'source-return',sources:returns,index,
+        color:config['source-return'].color,
+        duration:config['source-return'].duration,started:start+index*55
+      }));
+      effects.push({kind:'answer',sources:[],index:0,
+        color:config.answer.color,duration:config.answer.duration,
+        started:start+(returns.length?770+returns.length*55:0)});
+      lastContextIds=[];
+    }else{
+      const chosen=kind==='recall'?visibleIds:[null];
+      chosen.forEach((id,index)=>effects.push({kind,sources:kind==='recall'?visibleIds:[],
+        index,color:config[kind].color,duration:config[kind].duration,
+        started:start+index*65}));
+    }
+    if(effects.length>18)effects.splice(0,effects.length-18);
     if(!effectFrame)effectFrame=requestAnimationFrame(frame);
   }
   pulse.addEventListener('animationend',()=>{

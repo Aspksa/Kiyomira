@@ -599,3 +599,54 @@ html,body{height:100%;overflow:hidden}
   .unified-workspace .cognitive-comets{display:none}
   .unified-workspace .cognitive-flow{transition:none}
 }
+
+/* Kiyomira 10 · one neural surface: remove seams, preserve tactile hit areas. */
+.unified-workspace .brain-panel,
+.unified-workspace .chat-view{
+  border:0!important;
+  box-shadow:none;
+  background:transparent;
+}
+.unified-workspace .brain-head,
+.unified-workspace .conversation-head,
+.unified-workspace .brain-footer,
+.unified-workspace .brain-controls{
+  border:0!important;box-shadow:none;
+}
+.unified-workspace .messages{
+  scroll-anchor:auto;
+  overflow-anchor:none;
+  min-height:0;
+  background:transparent;
+}
+.unified-workspace .message{
+  background:rgba(6,20,25,.20);
+  border:1px solid transparent;
+  border-radius:10px;
+  box-shadow:none;
+  overflow-wrap:anywhere;
+}
+.unified-workspace .message.user{
+  background:rgba(30,95,105,.13);
+  border-color:rgba(98,180,179,.09);
+}
+.unified-workspace .message.assistant{
+  border-color:transparent;
+  background:transparent;
+}
+.unified-workspace .message.source-active{
+  outline:1px solid #67cab7;
+}
+.unified-workspace .conversation-head,
+.unified-workspace .brain-head{
+  background:transparent;
+}
+.unified-workspace .composer-wrap{
+  position:relative;
+  isolation:isolate;
+  min-height:0;
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .message{animation:none!important}
+  .unified-workspace .messages{scroll-behavior:auto}
+}

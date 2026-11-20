@@ -22,6 +22,7 @@
   let memoryWaveAt=0,memoryWaveIds=new Set();
   let sourceRouteEdges=new Set(),routeUntil=0;
   let renderStep=25,measuredFrames=0,lastDrawCost=0;
+  let staticRingLayer=null,staticRingBuilds=0,semanticEdgeCount=0;
   let lastGraphFingerprint='';
   let activeChat=null,activityLabel='ОЖИДАНИЕ';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -177,6 +178,7 @@
       .filter(c=>factPositions.has(c.a)&&factPositions.has(c.b))
       .map(c=>({a:factPositions.get(c.a),b:factPositions.get(c.b)}));
     nodes=fresh.slice(0,1251);edges=links.filter(([a,b])=>a<nodes.length&&b<nodes.length);
+    semanticEdgeCount=edges.filter(edge=>edge[2]==='lexical').length;
     // Indices may change after SQLite updates; never retain stale path highlights.
     sourceRouteEdges.clear();routeUntil=0;
     chatIds=chats.map(c=>c.id);
@@ -361,6 +363,39 @@
     live.classList.toggle('error',next==='error');
     request();
   }
+  // Expensive concentric geometry is rasterized once into an offscreen static
+  // layer. Panning/zoom only transform the cached image; comet Canvas is separate.
+  function drawStaticRings(){
+    if(!staticRingLayer&&typeof document.createElement==='function'&&
+       typeof ctx.drawImage==='function'){
+      try{
+        const layer=document.createElement('canvas');
+        layer.width=640;layer.height=640;
+        const ringCtx=layer.getContext('2d');
+        if(ringCtx){
+          ringCtx.translate(320,320);
+          for(const r of [40,64,88,111,134,158,183,213,244,272,303]){
+            ringCtx.beginPath();ringCtx.arc(0,0,r,0,TAU);
+            ringCtx.strokeStyle=r===111||r===244?'rgba(238,138,60,.24)':'rgba(238,138,60,.09)';
+            ringCtx.lineWidth=r===111?1:.6;ringCtx.stroke();
+          }
+          for(const r of [154,195,232,261,290]){
+            ringCtx.beginPath();ringCtx.arc(0,0,r,0,TAU);
+            ringCtx.strokeStyle='rgba(91,172,170,.09)';
+            ringCtx.lineWidth=.45;ringCtx.stroke();
+          }
+          staticRingLayer=layer;staticRingBuilds++;
+        }
+      }catch{staticRingLayer=null;}
+    }
+    if(staticRingLayer&&typeof ctx.drawImage==='function'){
+      ctx.drawImage(staticRingLayer,-320,-320);return;
+    }
+    for(const r of [40,64,88,111,134,154,158,183,195,213,232,244,261,272,290,303]){
+      ctx.strokeStyle=r===111||r===244?'rgba(238,138,60,.24)':'rgba(91,172,170,.09)';
+      ctx.lineWidth=r===111?1:.65;circle(0,0,r);ctx.stroke();
+    }
+  }
   function draw(time){
     if(!width||!height)return;
     ctx.clearRect(0,0,width,height);
@@ -384,20 +419,19 @@
     glow.addColorStop(0,'rgba(111,202,188,.10)');glow.addColorStop(.55,'rgba(238,160,91,.029)');glow.addColorStop(1,'rgba(238,138,60,0)');
     ctx.fillStyle=glow;circle(0,0,300);ctx.fill();
     if(mode==='circle'){
-      for(const r of [40,64,88,111,134,158,183,213,244,272,303]){
-        ctx.strokeStyle=r===111||r===244?'rgba(238,138,60,.24)':'rgba(238,138,60,.09)';
-        ctx.lineWidth=r===111?1:.6;circle(0,0,r);ctx.stroke();
-      }
+      drawStaticRings();
 
       // Outer TRACKTOR categorical rim, tied to actual thematic sectors.
       ctx.lineWidth=.8;ctx.strokeStyle='rgba(99,165,176,.25)';
       circle(0,0,299);ctx.stroke();
       for(const sector of sectorAngles){
         const width=sector.end-sector.start;
-        const count=Math.max(1,Math.min(14,Math.floor(width*9)));
+        // Rim density is derived from persisted counts; no decorative fake data.
+        const count=Math.max(1,Math.min(44,Math.round(Math.sqrt(Math.max(0,sector.group.count||0))*2.4)));
         for(let j=0;j<count;j++){
           const angle=sector.start+(j+.5)*width/count;
-          const x=Math.cos(angle)*298,y=Math.sin(angle)*298;
+          const radius=294+(j%3)*3;
+          const x=Math.cos(angle)*radius,y=Math.sin(angle)*radius;
           ctx.globalAlpha=.20+(sector.group.count>0?.33:.05);
           ctx.strokeStyle=palette[Math.abs(sector.group.group||0)%palette.length];
           ctx.lineWidth=.7;circle(x,y,3.7);ctx.stroke();
@@ -492,7 +526,12 @@
       const hot=route||recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=route?2:hot?1.35:.7;
       ctx.strokeStyle=route?'rgba(127,230,203,.93)':hot?'rgba(255,207,154,.75)':relationType==='lexical'?'rgba(126,161,154,.30)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
-      ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(from.x,from.y);
+      if(relationType==='lexical'&&typeof ctx.quadraticCurveTo==='function'){
+        const midX=(from.x+to.x)*.5,midY=(from.y+to.y)*.5;
+        ctx.quadraticCurveTo(midX*.78,midY*.78,to.x,to.y);
+      }else ctx.lineTo(to.x,to.y);
+      ctx.stroke();
       // A bounded illumination travels ONLY along links to source IDs reported by SQLite.
       if((waveActive&&(memoryWaveIds.has(to.id)||memoryWaveIds.has(from.id)))||
         (route&&time<routeUntil&&!motion.matches)){
@@ -706,7 +745,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost};},
+    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
