@@ -101,3 +101,48 @@ test('Граф контекста использует только подтве
     assert.ok(context.история.some(row=>row.текст.includes('Подтверждённый факт')));
   }finally{memory.закрыть();}
 });
+
+
+test('Обход графа возвращает проверяемую цепочку реальных источников и не зацикливается',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Цепочка');
+    memory.добавитьПару('Технология: SQLite','Сохранено',chat);
+    memory.добавитьПару('Хранилище: SQLite','Сохранено',chat);
+    memory.добавитьПару('Движок: SQLite','Сохранено',chat);
+    for(const fact of memory.кандидатыФактов(30))memory.изменитьФакт(fact.ид,'подтверждено');
+    const links=memory.путиПодтверждённыхФактов('технология SQLite',6,2);
+    assert.ok(links.length>=1);
+    for(const link of links){
+      assert.ok(link.глубина>=1&&link.глубина<=2);
+      assert.equal(link.путь.length,link.глубина+1);
+      assert.equal(link.источники.length,link.путь.length);
+      assert.equal(new Set(link.путь).size,link.путь.length);
+      assert.equal(new Set(link.источники).size,link.источники.length);
+      assert.equal(link.источники[link.источники.length-1],link.источник_ид);
+      assert.ok(link.сила>0&&link.сила<=1);
+    }
+    assert.ok(memory.путиПодтверждённыхФактов('технология SQLite',6,1).every(f=>f.глубина===1));
+    assert.ok(memory.путиПодтверждённыхФактов('технология SQLite',1,3).length<=1);
+    const context=memory.контекстПоЗапросу('технология SQLite',chat);
+    assert.ok(context.история.some(m=>m.текст.includes('цепочка источников')));
+  }finally{memory.закрыть();}
+});
+
+test('Обход не проходит через конфликтующие или неподтверждённые записи',()=>{
+  const memory=new ПамятьДиалога(50);
+  try{
+    const chat=memory.создатьДиалог('Контроль');
+    memory.добавитьПару('Технология: SQLite','Принято',chat);
+    memory.добавитьПару('Движок: SQLite','Принято',chat);
+    memory.добавитьПару('Движок: Postgres','Принято',chat);
+    memory.добавитьПару('Другое: SQLite','Принято',chat);
+    const facts=memory.кандидатыФактов(20);
+    for(const fact of facts.filter((f:any)=>f.ключ!=='другое'))
+      memory.изменитьФакт(fact.ид,'подтверждено');
+    assert.deepEqual(memory.путиПодтверждённыхФактов('технология sqlite',5,3),[]);
+    assert.ok(!memory.контекстПоЗапросу('технология sqlite',chat).история
+      .some(m=>m.текст.includes('Связанный подтверждённый факт')));
+    assert.equal(memory.путиПодтверждённыхФактов('совсем неизвестный текст',4,2).length,0);
+  }finally{memory.закрыть();}
+});
