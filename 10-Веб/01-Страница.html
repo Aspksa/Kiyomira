@@ -80,6 +80,8 @@
         <label for="model-name">Основная модель</label>
         <input id="model-name" type="text" maxlength="200" list="models-list" placeholder="Название модели Cloud.ru" autocomplete="off">
         <datalist id="models-list"></datalist>
+        <label class="demo-option"><input type="checkbox" id="demo-mode"> Включить тестовую модель (без Cloud.ru)</label>
+        <p class="hint">Демо-ответы не генерируются ИИ. По умолчанию отключено.</p>
         <div class="settings-actions">
           <button type="submit" class="primary">Сохранить</button>
           <button type="button" id="refresh-models">Список моделей</button>
