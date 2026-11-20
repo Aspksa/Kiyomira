@@ -481,6 +481,13 @@
       // Keep nodes anchored to stable deterministic slots as SQLite grows.
       const ringAge=now()-categoryGrowthAt;
       const ringFade=motion.matches?1:clamp(ringAge/480,0,1);
+      // A true circular guide at each occupied radius, not a floating icon arc.
+      const ringCount=Math.max(1,Math.ceil(categoryRings.length/categorySlots));
+      ctx.strokeStyle='rgba(105,186,173,.18)';ctx.lineWidth=.7;
+      for(let ring=0;ring<ringCount;ring++){
+        const radius=categoryBase+Math.max(0,Math.min(4,categoryRings.length-8))*8+categoryGap*ring;
+        circle(0,0,radius);ctx.stroke();
+      }
       for(const category of categoryRings){
         const color=category.kind==='project'?'#d7ad77':'#72c6ba';
         const r=category.radius,angle=category.angle;
@@ -493,7 +500,7 @@
         ctx.strokeStyle='rgba(115,179,169,.12)';ctx.lineWidth=.5;
         ctx.beginPath();ctx.moveTo(Math.cos(angle)*308,Math.sin(angle)*308);
         ctx.lineTo(Math.cos(angle)*(r-9),Math.sin(angle)*(r-9));ctx.stroke();
-        if(zoom*fitScale()>.64||highlighted){
+        if((zoom*fitScale()>.64||highlighted)&&categoryRings.length<=48){
           ctx.font='9px ui-monospace,Consolas,monospace';
           ctx.textAlign=Math.cos(angle)>.3?'left':Math.cos(angle)<-.3?'right':'center';
           const offset=13;
@@ -538,7 +545,9 @@
         ctx.font='9px ui-monospace,Consolas,monospace';
         ctx.textAlign=Math.cos(a)>.28?'left':Math.cos(a)<-.28?'right':'center';
         ctx.fillStyle=palette[i%palette.length];
-        ctx.fillText(group.label.slice(0,14)+' · '+group.count,x,y);
+        if((sector.end-sector.start)*radius>45||selected?.id===group.id){
+          ctx.fillText(group.label.slice(0,14)+' · '+group.count,x,y);
+        }
         const ox=Math.cos(a)*287,oy=Math.sin(a)*287;
         ctx.strokeStyle=palette[i%palette.length];ctx.lineWidth=1;
         circle(ox,oy,10);ctx.stroke();
@@ -785,7 +794,9 @@
   document.getElementById('brain-zoom-in')?.addEventListener('click',()=>changeZoom(1.3));
   document.getElementById('brain-zoom-out')?.addEventListener('click',()=>changeZoom(1/1.3));
   for(const button of document.querySelectorAll('[data-brain-mode]'))button.addEventListener('click',()=>setMode(button.dataset.brainMode));
-  document.getElementById('brain-reset')?.addEventListener('click',()=>{cameraTarget={x:0,y:0};zoom=1;syncZoom();request();save();});
+  document.getElementById('brain-reset')?.addEventListener('click',()=>{
+    cameraTarget={x:0,y:0};zoomTarget=null;zoom=1;syncZoom();request();save();
+  });
   document.getElementById('brain-focus')?.addEventListener('click',()=>{
     focus=!focus;document.body.classList.toggle('brain-focus',focus);
     const button=document.getElementById('brain-focus');button.textContent=focus?'Выход':'Фокус';
