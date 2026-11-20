@@ -576,3 +576,26 @@ html,body{height:100%;overflow:hidden}
   .unified-workspace .brain-stage,
   .unified-workspace .brain-controls{scroll-behavior:auto}
 }
+
+/* Mizuyori-inspired photon comets are isolated from the expensive graph Canvas.
+   Static SVG route and brain layers do not repaint for each travelling particle. */
+.unified-workspace .cognitive-comets{
+  display:block;position:absolute;inset:0;width:100%;height:100%;
+  z-index:4;pointer-events:none;background:transparent;
+}
+.unified-workspace.comet-layer-enabled .cognitive-flow .flow-pulse{
+  animation:none!important;stroke-dasharray:none;opacity:0;
+}
+.unified-workspace.comet-layer-enabled .cognitive-flow .flow-path{
+  stroke:rgba(88,196,255,.15);
+}
+.unified-workspace[data-activity="ошибка"] .cognitive-flow .flow-path{
+  stroke:rgba(226,108,98,.24);
+}
+@media(max-width:700px){
+  .unified-workspace .cognitive-comets{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace .cognitive-comets{display:none}
+  .unified-workspace .cognitive-flow{transition:none}
+}
