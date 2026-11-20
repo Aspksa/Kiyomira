@@ -42,6 +42,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(appjs.status,200);
     const appSource=await appjs.text();
     assert.match(appSource,/markdown/);
+    assert.match(appSource,/indexEmbeddings/);
+    assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
     assert.match(appSource,/kiyomira.workspace.chatPercent/);
     const brainAsset=await fetch(url('/04-Мозг.js'));
@@ -63,6 +65,13 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const emptyBrain=await request('/api/brain');
     assert.equal(emptyBrain.status,200);
     assert.deepEqual(emptyBrain.data.chats,[]);
+    const embeddingStatus=await request('/api/memory/embeddings/status');
+    assert.equal(embeddingStatus.status,200);
+    assert.equal(embeddingStatus.data.индексировано,0);
+    assert.equal(embeddingStatus.data.экспериментально,true);
+    assert.equal((await request('/api/memory/embeddings/index','POST',{})).status,400);
+    assert.equal((await request('/api/memory/embeddings/index','POST',{confirm:true})).status,409);
+    assert.equal((await request('/api/memory/embeddings/search','POST',{query:'sqlite'})).status,400);
     assert.equal(emptyBrain.data.aggregateLimit,10000);
     assert.equal(emptyBrain.data.sampledMessages,0);
     const chats=await request('/api/chats');

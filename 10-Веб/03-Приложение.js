@@ -220,7 +220,7 @@ function modal(kind) {
   el('facts-panel').hidden=kind!=='facts';
   el('dialog-title').textContent=kind==='settings'?'Настройки Cloud.ru':kind==='facts'?'Проверка воспоминаний':'Поиск по памяти';
   if(kind==='settings')void loadSettings();
-  else if(kind==='facts')void loadFacts();
+  else if(kind==='facts'){void loadFacts();void refreshEmbeddingStatus();}
   else el('search-input').focus();
 }
 async function loadFacts() {
@@ -279,6 +279,46 @@ async function loadFacts() {
         }catch(err){feedback.textContent=err.message;}
       });actions.append(timeline);
       item.append(name,meta,actions);root.append(item);
+    }
+  }catch(err){feedback.textContent=err.message;}
+}
+
+
+async function refreshEmbeddingStatus(){
+  try{
+    const status=await api('/api/memory/embeddings/status');
+    el('embedding-status').textContent='Локально индексировано: '+status.индексировано+
+      ' · модель '+status.модель+' · '+(status.готово?'ключ настроен':'нужен ключ Cloud.ru');
+  }catch(err){el('embedding-status').textContent=err.message;}
+}
+async function indexEmbeddings(){
+  if(!confirm('ВНИМАНИЕ: тексты до 8 сообщений будут отправлены в Cloud.ru для embeddings. Запрос может тарифицироваться. Запустить вручную?'))return;
+  const feedback=el('embedding-feedback');feedback.textContent='Запрашиваю эмбеддинги...';
+  try{
+    const result=await api('/api/memory/embeddings/index','POST',{confirm:true});
+    feedback.textContent='Добавлено в SQLite: '+result.indexed+' записей.';
+    await refreshEmbeddingStatus();
+  }catch(err){feedback.textContent=err.message;}
+}
+async function searchEmbeddings(){
+  const query=el('embedding-query').value.trim();
+  if(query.length<2)return;
+  if(!confirm('Поисковый запрос будет отправлен Cloud.ru для векторизации и может тарифицироваться. Продолжить?'))return;
+  const root=el('embedding-results'),feedback=el('embedding-feedback');
+  root.replaceChildren();feedback.textContent='Ищу по векторной памяти...';
+  try{
+    const {results}=await api('/api/memory/embeddings/search','POST',{confirm:true,query});
+    feedback.textContent='Найдено: '+results.length;
+    for(const match of results){
+      const button=document.createElement('button');button.type='button';button.className='result';
+      const title=document.createElement('strong');
+      title.textContent='Сообщение #'+match.ид+' · сходство '+(match.балл*100).toFixed(1)+'%';
+      const text=document.createElement('span');text.textContent=match.текст;
+      button.append(title,text);
+      button.addEventListener('click',async()=>{
+        closeModal();await refreshChats();await selectChat(match.диалог_ид);
+      });
+      root.append(button);
     }
   }catch(err){feedback.textContent=err.message;}
 }
@@ -405,6 +445,8 @@ async function bootstrap() {
   el('nav-settings').addEventListener('click',()=>modal('settings'));
   el('brain-facts').addEventListener('click',()=>modal('facts'));
   el('refresh-facts').addEventListener('click',()=>{void loadFacts();});
+  el('embedding-index').addEventListener('click',()=>{void indexEmbeddings();});
+  el('embedding-search').addEventListener('click',()=>{void searchEmbeddings();});
   el('nav-search').addEventListener('click',()=>modal('search'));
   el('dialog-close').addEventListener('click',closeModal);
   el('overlay').addEventListener('click',event=>{if(event.target===el('overlay'))closeModal();});

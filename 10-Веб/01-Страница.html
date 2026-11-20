@@ -118,6 +118,17 @@
         <span id="facts-summary" class="hint"></span>
       </div>
       <div id="facts-list" class="facts-list" role="list"></div>
+      <div class="embedding-panel">
+        <p class="hint"><strong>Экспериментальный смысловой поиск.</strong> Cloud.ru перечисляет Qwen3-Embedding, но публичная спецификация не подтверждает /embeddings. Запросы выполняются только вручную и могут тарифицироваться. Тексты выбранных сообщений отправляются в Cloud.ru при индексации.</p>
+        <p class="hint" id="embedding-status">Векторизация не запускалась.</p>
+        <button type="button" id="embedding-index">Индексировать до 8 сообщений (может быть платно)</button>
+        <label for="embedding-query" class="hint">Запрос по смыслу</label>
+        <input type="search" id="embedding-query" maxlength="2400" placeholder="Что найти в памяти?">
+        <button type="button" id="embedding-search">Искать по смыслу (может быть платно)</button>
+        <div id="embedding-results" class="search-results"></div>
+        <p id="embedding-feedback" class="notice" role="status"></p>
+      </div>
+
       <p class="notice" id="facts-feedback" role="status"></p>
     </section>
     <section id="search-panel" hidden>
