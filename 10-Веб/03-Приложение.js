@@ -102,6 +102,8 @@ async function pollBrainEvents() {
     if(event.id<=state.brainEventId)continue;
     state.brainEventId=event.id;
     window.KiyomiraBrain?.eventActivity(event);
+    if(event.type==='контекст')window.KiyomiraUnity?.signal('recall');
+    if(event.type==='ответ')window.KiyomiraUnity?.signal('answer');
   }
   state.brainEventId=Math.max(state.brainEventId,payload.latest||0);
 }
@@ -177,6 +179,7 @@ async function sendMessage(ev) {
   if(!text)return;
   const id=state.selected;
   buttonBusy(true);notice();
+  window.KiyomiraUnity?.signal('send');
   input.value='';
   if(el('messages').querySelector('.empty'))el('messages').replaceChildren();
   const temp=message('пользователь',text,true);
@@ -391,6 +394,61 @@ async function search() {
     }
   }catch(err){const p=document.createElement('p');p.className='notice';p.textContent=err.message;root.append(p);}
 }
+// One workspace: the connection line follows live brain/chat geometry.
+// It animates only for observed user send, SQLite context event or completed answer.
+function initCognitiveFlow(){
+  const workspace=el('workspace'),svg=el('cognitive-flow');
+  const path=el('cognitive-flow-path'),pulse=el('cognitive-flow-pulse');
+  const brain=el('brain-canvas'),messages=el('messages'),composer=el('chat-form');
+  if(!workspace||!svg||!path||!pulse||!brain||!messages||!composer)return;
+  const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+  let currentKind=null,frame=0;
+  const point=(rect,root,where)=>({
+    x:rect.left-root.left+rect.width*where,
+    y:rect.top-root.top+rect.height*.5
+  });
+  function layout(){
+    if(window.matchMedia('(max-width: 700px)').matches)return;
+    const root=workspace.getBoundingClientRect(),source=brain.getBoundingClientRect();
+    const target=(currentKind==='send'?composer:messages).getBoundingClientRect();
+    if(root.width<1||root.height<1||source.width<1||target.width<1)return;
+    const core=window.KiyomiraBrain?.getCorePosition?.();
+    const start=core
+      ?{x:core.x-root.left,y:core.y-root.top}
+      :point(source,root,.5);
+    const end=point(target,root,.12);
+    const control=Math.max(26,Math.abs(end.x-start.x)*.42);
+    const d='M '+start.x.toFixed(1)+' '+start.y.toFixed(1)+
+      ' C '+(start.x+control).toFixed(1)+' '+start.y.toFixed(1)+
+      ', '+(end.x-control).toFixed(1)+' '+end.y.toFixed(1)+
+      ', '+end.x.toFixed(1)+' '+end.y.toFixed(1);
+    svg.setAttribute('viewBox','0 0 '+root.width+' '+root.height);
+    path.setAttribute('d',d);pulse.setAttribute('d',d);
+  }
+  function relayout(){
+    if(frame)return;
+    frame=requestAnimationFrame(()=>{frame=0;layout();});
+  }
+  function signal(kind){
+    if(!['send','recall','answer'].includes(kind))return;
+    if(reduceMotion.matches||window.matchMedia('(max-width: 700px)').matches)return;
+    currentKind=kind;layout();
+    workspace.classList.remove('flow-to-brain','flow-to-chat','flow-recall','flow-active');
+    // Restart animation cleanly after subsequent real events.
+    void pulse.getBoundingClientRect();
+    workspace.classList.add('flow-active',kind==='send'?'flow-to-brain':kind==='recall'?'flow-recall':'flow-to-chat');
+  }
+  pulse.addEventListener('animationend',()=>{
+    workspace.classList.remove('flow-active','flow-to-brain','flow-to-chat','flow-recall');
+    currentKind=null;
+  });
+  new ResizeObserver(relayout).observe(workspace);
+  window.addEventListener('resize',relayout);
+  reduceMotion.addEventListener?.('change',relayout);
+  window.KiyomiraUnity={signal,relayout};
+  relayout();
+}
+
 function initWorkspaceDivider() {
   const workspace=el('workspace'),divider=el('workspace-divider');
   if(!workspace||!divider)return;
@@ -426,6 +484,7 @@ function initWorkspaceDivider() {
 
 async function bootstrap() {
   initWorkspaceDivider();
+  initCognitiveFlow();
   el('chat-form').addEventListener('submit',ev=>{void sendMessage(ev);});
   el('chat-input').addEventListener('keydown',ev=>{
     if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();el('chat-form').requestSubmit();}
@@ -438,6 +497,7 @@ async function bootstrap() {
     el('mobile-brain').title=shown?'Показать чат':'Показать мозг';
     el('mobile-brain').textContent=shown?'▤':'◎';
     window.dispatchEvent(new Event('resize'));
+    window.KiyomiraUnity?.relayout();
   });
   el('new-chat').addEventListener('click',()=>{void newChat();});
   el('nav-chat').addEventListener('click',()=>{closeModal();el('sidebar').classList.toggle('mobile-open');});
