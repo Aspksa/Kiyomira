@@ -172,8 +172,9 @@ async function создатьВебСервер({ корень = resolve(__dirna
         }
       }
       if (запрос.method === 'POST' && путь === '/api/quit') {
+        ответ.setHeader('Connection','close');
         json(ответ,200,{ ok:true });
-        queueMicrotask(()=>{ void закрыть(); });
+        setImmediate(()=>{ void закрыть(); });
         return;
       }
       throw ошибка('API не найден',404);
@@ -193,7 +194,11 @@ async function создатьВебСервер({ корень = resolve(__dirna
     await Promise.allSettled([...ожидают]);
     await ядро.остановить();
     база.закрыть();
-    await new Promise(resolveDone => сервер.close(resolveDone));
+    await new Promise(resolveDone => {
+      сервер.close(resolveDone);
+      // Closing the program must not wait forever for an idle browser keep-alive socket.
+      сервер.closeAllConnections();
+    });
   }
 
   try {
@@ -215,7 +220,7 @@ if (require.main === module) {
     const stop = () => {
       if (остановка) return;
       остановка = true;
-      void app.close().then(() => { process.exitCode = 0; if (process.connected) process.disconnect(); }).catch(() => { process.exitCode = 1; if (process.connected) process.disconnect(); });
+      void app.close().then(() => { console.log('[Kiyomira] Веб-сервер остановлен'); if (process.connected) process.disconnect(); process.exit(0); }).catch(() => { if (process.connected) process.disconnect(); process.exit(1); });
     };
     process.on('SIGINT',stop);
     process.on('SIGTERM',stop);
