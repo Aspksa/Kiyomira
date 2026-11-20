@@ -23,6 +23,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(html,/Kiyomira — когнитивная система/);
     assert.match(html,/id="workspace-divider"/);
     assert.match(html,/unified-workspace/);
+    assert.match(html,/id="brain-auto-layout"/);
     assert.match(html,/id="cognitive-flow"/);
     assert.match(html,/id="cognitive-flow-path"/);
     assert.match(html,/aria-orientation="vertical"/);
@@ -48,6 +49,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/indexEmbeddings/);
     assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
+    assert.match(appSource,/KiyomiraLayout/);
     assert.match(appSource,/initCognitiveFlow/);
     assert.match(appSource,/indexDocument/);
     assert.match(appSource,/jumpToMessage/);
@@ -298,6 +300,8 @@ test('Canvas brain executes in a browser-like runtime with SQLite data and inter
   };
   vm.runInNewContext(source,context,{timeout:1500});
   assert.equal(typeof window.KiyomiraBrain?.update,'function');
+  assert.ok(window.KiyomiraBrain.getViewportStats().fit>0);
+  assert.ok(window.KiyomiraBrain.getViewportStats().fit<=1);
   const graph={
     chats:[{id:1,title:'Главный чат',count:3}],
     messages:[

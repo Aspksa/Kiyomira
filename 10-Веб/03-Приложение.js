@@ -134,6 +134,7 @@ async function refreshChats() {
 async function selectChat(id,focusMessageId=null) {
   if(state.busy) {notice('Сначала остановите текущий ответ');return;}
   state.selected=id;
+  window.KiyomiraLayout?.focus('chat');
   const chat=state.chats.find(x=>x.ид===id);
   el('chat-title').textContent=chat?.название||'Диалог';
   const {messages}=await api('/api/chats/'+id);
@@ -217,6 +218,7 @@ async function sendMessage(ev) {
   const input=el('chat-input');const text=input.value.trim();
   if(!text)return;
   const id=state.selected;
+  window.KiyomiraLayout?.focus('chat');
   buttonBusy(true);notice();
   window.KiyomiraUnity?.signal('send');
   input.value='';
@@ -537,41 +539,75 @@ function initCognitiveFlow(){
 }
 
 function initWorkspaceDivider() {
-  const workspace=el('workspace'),divider=el('workspace-divider');
-  if(!workspace||!divider)return;
+  const workspace=el('workspace'),divider=el('workspace-divider'),toggle=el('brain-auto-layout');
+  if(!workspace||!divider||!toggle)return;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
-  function apply(value){
+  let dragging=false,automatic=true,lastFocus='neutral',manualPercent=35;
+  try{
+    manualPercent=clamp(Number(localStorage.getItem('kiyomira.workspace.chatPercent'))||35,25,55);
+    automatic=localStorage.getItem('kiyomira.workspace.autoBalance')!=='off';
+  }catch{}
+  function apply(value,persist=false){
     const percent=clamp(Math.round(Number(value)||35),25,55);
     workspace.style.setProperty('--chat-percent',percent+'%');
     divider.setAttribute('aria-valuenow',String(percent));
-    try{localStorage.setItem('kiyomira.workspace.chatPercent',String(percent));}catch{}
+    if(persist){
+      manualPercent=percent;
+      try{localStorage.setItem('kiyomira.workspace.chatPercent',String(percent));}catch{}
+    }
     window.dispatchEvent(new Event('resize'));
+    window.KiyomiraUnity?.relayout();
   }
-  try{apply(localStorage.getItem('kiyomira.workspace.chatPercent')||35);}catch{apply(35);}
-  let dragging=false;
+  function syncToggle(){
+    toggle.setAttribute('aria-pressed',String(automatic));
+    toggle.classList.toggle('selected',automatic);
+    toggle.title=automatic?'Баланс включён: мозг/чат реагируют на фокус':'Автобаланс отключён';
+    try{localStorage.setItem('kiyomira.workspace.autoBalance',automatic?'on':'off');}catch{}
+  }
+  function focus(area){
+    if(!automatic||dragging||document.body.classList.contains('brain-focus')||
+      window.matchMedia('(max-width: 700px)').matches)return;
+    if(!['brain','chat','neutral'].includes(area)||lastFocus===area)return;
+    lastFocus=area;
+    // Chat stays at least 30% wide, even when studying the memory graph.
+    apply(area==='brain'?30:area==='chat'?45:35);
+  }
+  apply(manualPercent);syncToggle();
+  toggle.addEventListener('click',()=>{
+    automatic=!automatic;lastFocus='neutral';
+    syncToggle();
+    if(automatic)focus('neutral');
+    else apply(manualPercent);
+  });
   divider.addEventListener('pointerdown',e=>{
     if(window.matchMedia('(max-width: 700px)').matches)return;
-    dragging=true;divider.setPointerCapture(e.pointerId);e.preventDefault();
+    dragging=true;automatic=false;lastFocus='neutral';syncToggle();
+    workspace.classList.add('workspace-resizing');
+    divider.setPointerCapture(e.pointerId);e.preventDefault();
   });
   divider.addEventListener('pointermove',e=>{
     if(!dragging)return;
     const rect=workspace.getBoundingClientRect();
     if(!rect.width)return;
-    apply((rect.right-e.clientX)/rect.width*100);
+    apply((rect.right-e.clientX)/rect.width*100,true);
   });
-  divider.addEventListener('pointerup',()=>{dragging=false;});
-  divider.addEventListener('pointercancel',()=>{dragging=false;});
+  function stopDrag(){dragging=false;workspace.classList.remove('workspace-resizing');}
+  divider.addEventListener('pointerup',stopDrag);
+  divider.addEventListener('pointercancel',stopDrag);
   divider.addEventListener('keydown',e=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
-    e.preventDefault();
+    e.preventDefault();automatic=false;lastFocus='neutral';syncToggle();
     const current=Number(divider.getAttribute('aria-valuenow'))||35;
-    apply(e.key==='Home'?25:e.key==='End'?55:current+(e.key==='ArrowLeft'?2:-2));
+    apply(e.key==='Home'?25:e.key==='End'?55:current+(e.key==='ArrowLeft'?2:-2),true);
   });
+  window.KiyomiraLayout={focus,getState:()=>({automatic,percent:Number(divider.getAttribute('aria-valuenow'))})};
 }
 
 async function bootstrap() {
   initWorkspaceDivider();
   initCognitiveFlow();
+  el('chat-input').addEventListener('focus',()=>window.KiyomiraLayout?.focus('chat'));
+  window.addEventListener('kiyomira-brain-interaction',()=>window.KiyomiraLayout?.focus('brain'));
   el('chat-form').addEventListener('submit',ev=>{void sendMessage(ev);});
   el('chat-input').addEventListener('keydown',ev=>{
     if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();el('chat-form').requestSubmit();}

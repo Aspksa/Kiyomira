@@ -441,3 +441,23 @@ html,body{height:100%;overflow:hidden}
 .doc-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;
   background:#080706;border:1px solid rgba(130,180,159,.23);padding:12px;
   color:#decfbb;font:12px/1.6 var(--mono)}
+
+/* Kiyomira 6: one canvas, stable chat composer and activity-driven split. */
+.unified-workspace{transition:grid-template-columns .26s ease-out}
+.unified-workspace.workspace-resizing{transition:none}
+.unified-workspace .brain-head,
+.unified-workspace .conversation-head{min-height:0}
+.unified-workspace .brain-controls #brain-auto-layout{
+  border-color:rgba(238,138,60,.24);
+  color:#d7ac7c;
+}
+.unified-workspace .brain-controls #brain-auto-layout[aria-pressed="false"]{
+  color:#9d8b79;border-color:rgba(238,138,60,.08)
+}
+.unified-workspace .brain-stage canvas{display:block;max-width:100%;max-height:100%}
+@media(max-width:700px){
+  .unified-workspace{transition:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .unified-workspace{transition:none}
+}
