@@ -341,7 +341,7 @@
     });
     layout();save();
   }
-  const zoomLevel=()=>zoom<.78?'Обзор':zoom<1.35?'Кластеры':zoom<2.3?'Записи':'Детали';
+  const zoomLevel=()=> (zoomTarget??zoom)<.78?'Обзор':(zoomTarget??zoom)<1.35?'Кластеры':(zoomTarget??zoom)<2.3?'Записи':'Детали';
   function syncZoom(){
     const output=document.getElementById('brain-zoom-level');
     if(output)output.textContent=zoomLevel();
@@ -349,7 +349,7 @@
   function changeZoom(factor){
     const next=clamp((zoomTarget??zoom)*factor,.4,3.5);
     if(next===(zoomTarget??zoom))return;
-    zoomTarget=next;request();
+    zoomTarget=next;syncZoom();request();
     if(motion.matches){zoom=next;zoomTarget=null;syncZoom();save();}
     window.KiyomiraUnity?.relayout();
   }
@@ -766,7 +766,7 @@
           y:box.top+box.height/2+pan.y+node.y*scale
         }));
     },
-    getViewportStats(){return {fit:fitScale(),zoom:zoom*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
+    getViewportStats(){return {fit:fitScale(),zoom:(zoomTarget??zoom)*fitScale(),nodes:nodes.length,mode,detail:zoomLevel(),renderStep,routeEdges:sourceRouteEdges.size,lastDrawCost,avgDrawCost,frameRate,renderedFrames:measuredFrames,modeTransitionAge:Math.max(0,now()-modeTransitionAt),staticRingBuilds,semanticEdgeCount};},
     setBusy(value){setPhase(value?'request':'idle');}
   };
   syncZoom();setMode(mode);resize();
