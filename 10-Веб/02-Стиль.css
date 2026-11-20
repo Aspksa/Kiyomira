@@ -179,3 +179,18 @@ h1,h2,h3,p{margin:0}
  .brain-footer{padding:8px 10px}
  .brain-controls{padding:8px}
 }
+
+/* Compact visualization controls inspired by the dense TRACKTOR toolbar. */
+.brain-controls{gap:4px;padding:6px 9px;min-height:30px}
+.brain-controls button{
+  font-size:clamp(9px,.58rem,11px);font-weight:500;letter-spacing:.02em;
+  line-height:1.15;padding:4px 8px;min-height:23px;border-radius:2px;
+}
+.brain-controls button.selected{box-shadow:inset 0 0 11px rgba(var(--accent-rgb),.08)}
+.brain-head{padding-top:12px;padding-bottom:10px}
+.brain-footer{padding:7px 12px;font-size:.64rem}
+.brain-live.error{color:var(--danger);border-color:rgba(224,92,75,.4)}
+@media(max-width:700px){
+  .brain-controls{gap:3px;padding:5px}
+  .brain-controls button{padding:4px 7px;font-size:10px}
+}
