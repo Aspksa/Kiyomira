@@ -39,7 +39,8 @@
         <button type="button" id="mobile-list" class="icon-button mobile-only" aria-label="Показать диалоги">☰</button>
       </div>
     </header>
-    <section class="workspace" id="workspace">
+    <section class="workspace unified-workspace" id="workspace" aria-label="Единое пространство мозга и чата">
+      <svg id="cognitive-flow" class="cognitive-flow" aria-hidden="true" focusable="false" preserveAspectRatio="none"><path id="cognitive-flow-path" class="flow-path"/><path id="cognitive-flow-pulse" class="flow-pulse"/></svg>
       <section class="brain-panel" aria-label="Визуальная карта диалогов">
         <header class="brain-head"><div><div class="section-kicker">COGNITIVE CORE / SQLITE · КЛАСТЕРЫ</div><h1>Мозг Kiyomira</h1></div><span id="brain-live" class="brain-live">ОЖИДАНИЕ</span></header>
         <div class="brain-stage"><canvas id="brain-canvas" aria-label="Интерактивная карта диалогов и сообщений"></canvas></div>
@@ -53,7 +54,7 @@
         </div>
         <div class="brain-footer"><span id="brain-count">0 диалогов · 0 узлов</span><span id="brain-detail">Узлы показывают реальные диалоги и сообщения.</span></div>
       </section>
-      <div id="workspace-divider" class="workspace-divider" role="separator" tabindex="0" aria-label="Изменить ширину чата" aria-orientation="vertical" aria-valuemin="25" aria-valuemax="55" aria-valuenow="35" title="Перетащите, чтобы изменить ширину чата"></div>
+      <div id="workspace-divider" class="workspace-divider unified-divider" role="separator" tabindex="0" aria-label="Изменить ширину чата" aria-orientation="vertical" aria-valuemin="25" aria-valuemax="55" aria-valuenow="35" title="Перетащите, чтобы изменить ширину чата"></div>
       <section id="chat-view" class="chat-view">
       <div class="conversation-head">
         <div>

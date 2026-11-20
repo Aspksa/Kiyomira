@@ -22,6 +22,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const html=await front.text();
     assert.match(html,/Kiyomira — когнитивная система/);
     assert.match(html,/id="workspace-divider"/);
+    assert.match(html,/unified-workspace/);
+    assert.match(html,/id="cognitive-flow"/);
+    assert.match(html,/id="cognitive-flow-path"/);
     assert.match(html,/aria-orientation="vertical"/);
     assert.match(front.headers.get('content-security-policy'),/default-src 'self'/);
     const cookie=front.headers.get('set-cookie').split(';')[0];
@@ -45,6 +48,8 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(appSource,/indexEmbeddings/);
     assert.match(appSource,/searchEmbeddings/);
     assert.match(appSource,/initWorkspaceDivider/);
+    assert.match(appSource,/initCognitiveFlow/);
+    assert.match(appSource,/KiyomiraUnity/);
     assert.match(appSource,/kiyomira.workspace.chatPercent/);
     const brainAsset=await fetch(url('/04-Мозг.js'));
     assert.equal(brainAsset.status,200);
@@ -52,6 +57,7 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/kiyomira-brain-select/);
     assert.match(brainSource,/prefers-reduced-motion/);
     assert.match(brainSource,/setPhase/);
+    assert.match(brainSource,/getCorePosition/);
     assert.match(brainSource,/brain-focus/);
     assert.match(brainSource,/brain.camera/);
     assert.match(brainSource,/mode==='honeycomb'/);

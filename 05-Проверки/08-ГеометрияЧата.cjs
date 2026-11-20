@@ -97,6 +97,30 @@ test('real Chrome: send stays visible with scrollable long history at desktop an
         'long history must scroll '+width+'x'+height+JSON.stringify(history));
       assert.equal(send.display,'grid');
       assert.notEqual(send.visibility,'hidden');
+      const unity=await evaluate(`(()=>{
+        const host=document.getElementById('workspace');
+        const flow=document.getElementById('cognitive-flow');
+        const divider=document.getElementById('workspace-divider');
+        if(!window.KiyomiraUnity||!window.KiyomiraBrain?.getCorePosition)
+          return {error:'Unity or brain API missing'};
+        window.KiyomiraUnity.signal('send');
+        const d=document.getElementById('cognitive-flow-path').getAttribute('d');
+        const computed=getComputedStyle(flow);
+        const border=getComputedStyle(divider).borderLeftWidth;
+        const active=host.classList.contains('flow-to-brain');
+        window.KiyomiraUnity.signal('answer');
+        return {active,answer:host.classList.contains('flow-to-chat'),
+          hasPath:typeof d==='string'&&d.startsWith('M '),flowDisplay:computed.display,
+          dividerBorder:border};
+      })()`);
+      assert.ok(!unity.error,JSON.stringify(unity));
+      if(width>=701){
+        assert.equal(unity.hasPath,true,'missing unified animation route');
+        assert.equal(unity.active,true,'send must flow to brain');
+        assert.equal(unity.answer,true,'response must flow to chat');
+        assert.equal(unity.dividerBorder,'0px','divider must not visually split workspace');
+      }else assert.equal(unity.flowDisplay,'none','mobile should hide decorative route');
+
     }
   }finally{
     if(socket&&socket.readyState===WebSocket.OPEN)socket.close();
