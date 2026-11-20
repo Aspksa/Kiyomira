@@ -462,7 +462,8 @@ async function создатьВебСервер({ корень = resolve(__dirna
     if(закрывается||активные.size||ожидают.size)return;
     try{
       const result=база.обработатьФоновуюПамять(12);
-      if(result.обработано)фоновыхПакетов++;
+      const graph=база.обработатьФоновыеРебра(6);
+      if(result.обработано||graph.обработано)фоновыхПакетов++;
       фоноваяОшибка='';
     }catch(err){фоноваяОшибка=err instanceof Error?err.name:'background-error';}
   },1500);
