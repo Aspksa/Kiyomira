@@ -72,3 +72,30 @@ export function извлечьФакты(текст:string):Утверждени
     if(seen.has(key))return false;seen.add(key);return true;
   }).slice(0,8);
 }
+
+
+// Typed, conservative links for the internal memory graph. These are evidence
+// relations, not claims of causality, agreement or knowledge certainty.
+export type ФактГрафа={
+  ид:number;источник_ид:number;ключ:string;значение:string;статус:string;
+};
+export type СвязьГрафа={
+  a:number;b:number;тип:'повторение'|'общая_тема'|'противоречие';
+  источники:[number,number];сила:number;подтверждено:boolean;
+};
+const норм=(value:string)=>value.toLocaleLowerCase('ru')
+  .replace(/ё/g,'е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+export function определитьСвязьФактов(a:ФактГрафа,b:ФактГрафа):СвязьГрафа|null {
+  if(a.ид===b.ид||a.источник_ид===b.источник_ид||
+    a.статус==='отклонено'||b.статус==='отклонено')return null;
+  const ak=норм(a.ключ),bk=норм(b.ключ),av=норм(a.значение),bv=норм(b.значение);
+  if(!ak||!bk||!av||!bv)return null;
+  const confirmed=a.статус==='подтверждено'&&b.статус==='подтверждено';
+  let тип:СвязьГрафа['тип'],сила:number;
+  if(ak===bk&&av===bv){тип='повторение';сила=1;}
+  else if(ak===bk&&av!==bv){тип='противоречие';сила=.9;}
+  else if(av===bv&&av.length>=6){тип='общая_тема';сила=.7;}
+  else return null;
+  return {a:a.ид,b:b.ид,тип,источники:[a.источник_ид,b.источник_ид],
+    сила,подтверждено:confirmed};
+}
