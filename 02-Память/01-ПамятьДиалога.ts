@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { извлечьФакты } from './02-КартаЗнаний.ts';
 import { ранжировать, релевантность } from './04-ГибридныйПоиск.ts';
 
@@ -51,6 +52,16 @@ export class ПамятьДиалога {
       UNIQUE(источник_ид,ключ,значение)
     )`);
     this.база.exec('CREATE INDEX IF NOT EXISTS idx_факты_ключ ON факты_кандидаты(ключ, диалог_ид)');
+    this.база.exec(`CREATE TABLE IF NOT EXISTS векторные_индексы (
+      сообщение_ид INTEGER PRIMARY KEY,
+      модель TEXT NOT NULL,
+      хеш TEXT NOT NULL,
+      размерность INTEGER NOT NULL,
+      вектор BLOB NOT NULL,
+      создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_векторные_модели ON векторные_индексы(модель)');
+
     const factColumns=this.база.prepare('PRAGMA table_info(факты_кандидаты)').all() as {name:string}[];
     if(!factColumns.some(x=>x.name==='изменено')){
       this.база.exec("ALTER TABLE факты_кандидаты ADD COLUMN изменено TEXT NOT NULL DEFAULT ''");
@@ -158,6 +169,7 @@ export class ПамятьДиалога {
     if (!this.существуетДиалог(ид)) throw new Error('Диалог не найден');
     this.база.exec('BEGIN IMMEDIATE');
     try {
+      this.база.prepare('DELETE FROM векторные_индексы WHERE сообщение_ид IN (SELECT ид FROM сообщения WHERE диалог_ид=?)').run(ид);
       this.база.prepare('DELETE FROM история_фактов WHERE факт_ид IN (SELECT ид FROM факты_кандидаты WHERE диалог_ид=?)').run(ид);
       this.база.prepare('DELETE FROM факты_кандидаты WHERE диалог_ид=?').run(ид);
       this.база.prepare('DELETE FROM сообщения WHERE диалог_ид=?').run(ид);
@@ -336,10 +348,74 @@ export class ПамятьДиалога {
       источники:[...matches.map(row=>row.ид),...recent.map(row=>row.ид)]};
   }
 
+
+  // Explicit/manual embedding operations only; no automatic cloud calls.
+  кандидатыВекторизации(модель:string,лимит=16){
+    return this.база.prepare(`
+      SELECT s.ид,s.текст FROM сообщения s
+      LEFT JOIN векторные_индексы v ON v.сообщение_ид=s.ид
+      WHERE s.диалог_ид IS NOT NULL AND s.роль='пользователь'
+        AND (v.сообщение_ид IS NULL OR v.модель!=?)
+      ORDER BY s.ид DESC LIMIT ?`
+    ).all(модель,Math.max(1,Math.min(16,лимит))) as {ид:number;текст:string}[];
+  }
+  записатьВекторы(модель:string,вход:{ид:number;текст:string;вектор:number[]}[]):number{
+    if(!модель.trim()||вход.length<1||вход.length>16)throw new Error('Некорректный пакет векторов');
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      let записано=0;
+      for(const item of вход){
+        if(!Number.isSafeInteger(item.ид)||!Array.isArray(item.вектор)||
+          item.вектор.length<16||item.вектор.length>8192||
+          item.вектор.some(x=>!Number.isFinite(x)))throw new Error('Недопустимый вектор');
+        const source=this.база.prepare("SELECT текст,роль FROM сообщения WHERE ид=?")
+          .get(item.ид) as {текст:string;роль:Роль}|undefined;
+        if(!source||source.роль!=='пользователь'||source.текст!==item.текст)
+          throw new Error('Источник embedding не совпадает с SQLite');
+        const vector=Buffer.alloc(item.вектор.length*4);
+        for(let i=0;i<item.вектор.length;i++)vector.writeFloatLE(item.вектор[i],i*4);
+        const hash=createHash('sha256').update(item.текст).digest('hex');
+        this.база.prepare(`INSERT INTO векторные_индексы(сообщение_ид,модель,хеш,размерность,вектор)
+          VALUES(?,?,?,?,?) ON CONFLICT(сообщение_ид) DO UPDATE SET
+          модель=excluded.модель,хеш=excluded.хеш,размерность=excluded.размерность,
+          вектор=excluded.вектор,создано=CURRENT_TIMESTAMP`)
+          .run(item.ид,модель,hash,item.вектор.length,vector);
+        записано++;
+      }
+      this.база.exec('COMMIT');return записано;
+    }catch(err){this.база.exec('ROLLBACK');throw err;}
+  }
+  статусВекторов(модель:string){
+    const n=this.база.prepare('SELECT count(*) AS n FROM векторные_индексы WHERE модель=?')
+      .get(модель) as {n:number};
+    return {индексировано:n.n,модель};
+  }
+  поискПоВекторам(модель:string,query:number[],лимит=8){
+    if(!Array.isArray(query)||query.length<16||query.length>8192||
+      query.some(x=>!Number.isFinite(x)))throw new Error('Недопустимый вектор запроса');
+    const rows=this.база.prepare(`SELECT v.вектор,s.ид,s.диалог_ид,s.текст
+      FROM векторные_индексы v JOIN сообщения s ON s.ид=v.сообщение_ид
+      WHERE v.модель=? AND v.размерность=? ORDER BY s.ид DESC LIMIT 5000`)
+      .all(модель,query.length) as {вектор:Uint8Array;ид:number;диалог_ид:number;текст:string}[];
+    const queryNorm=Math.hypot(...query);
+    if(queryNorm<1e-9)throw new Error('Пустой вектор запроса');
+    return rows.map(row=>{
+      const vector=Buffer.from(row.вектор);
+      let dot=0,norm=0;
+      for(let i=0;i<query.length;i++){
+        const v=vector.readFloatLE(i*4);
+        dot+=v*query[i];norm+=v*v;
+      }
+      const score=norm>0?dot/(Math.sqrt(norm)*queryNorm):0;
+      return {ид:row.ид,диалог_ид:row.диалог_ид,текст:row.текст.slice(0,320),балл:score};
+    }).filter(row=>row.балл>0)
+      .sort((a,b)=>b.балл-a.балл).slice(0,Math.max(1,Math.min(20,лимит)));
+  }
+
   размер(): number {
     const запись = this.база.prepare('SELECT count(*) AS количество FROM сообщения').get() as { количество: number };
     return запись.количество;
   }
-  очистить(): void { this.база.exec('DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
+  очистить(): void { this.база.exec('DELETE FROM векторные_индексы; DELETE FROM история_фактов; DELETE FROM факты_кандидаты; DELETE FROM сообщения'); }
   закрыть(): void { this.база.close(); }
 }
