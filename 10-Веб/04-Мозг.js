@@ -264,9 +264,13 @@
         ctx.lineTo(Math.cos(a)*245,Math.sin(a)*245);ctx.stroke();
       }
       const icons={проекты:'◇',люди:'○',события:'◷',документы:'▤',решения:'✓',общее:'•'};
+      let previousLabel=null;
       sectorAngles.forEach((sector,i)=>{
         const group=sector.group,a=sector.middle;
-        const x=Math.cos(a)*254,y=Math.sin(a)*254;
+        let radius=252;
+        if(previousLabel&&Math.abs(Math.sin(a)*radius-previousLabel.y)<14&&Math.sign(Math.cos(a))===previousLabel.side)radius=270;
+        const x=Math.cos(a)*radius,y=Math.sin(a)*radius;
+        previousLabel={y,side:Math.sign(Math.cos(a))};
         ctx.font='9px ui-monospace,Consolas,monospace';
         ctx.textAlign=Math.cos(a)>.28?'left':Math.cos(a)<-.28?'right':'center';
         ctx.fillStyle=palette[i%palette.length];
@@ -303,6 +307,7 @@
     // Clear provenance of highlighted edges: core -> thematic group -> dialogue -> message.
     for(const [a,b] of edges){
       const from=nodes[a],to=nodes[b];if(!from||!to)continue;
+      if(zoom<.75&&to.kind==='message'&&!recalled.has(to.id)&&selected?.id!==to.id)continue;
       const hot=recalled.has(from.id)||recalled.has(to.id)||hovered&&(hovered.id===from.id||hovered.id===to.id||hovered.group===to.group)||selected&&(selected.id===from.id||selected.id===to.id||selected.chatId&&selected.chatId===to.chatId);
       ctx.lineWidth=hot?1.35:.7;
       ctx.strokeStyle=hot?'rgba(255,207,154,.75)':mode==='links'?'rgba(238,138,60,.29)':'rgba(238,138,60,.13)';
