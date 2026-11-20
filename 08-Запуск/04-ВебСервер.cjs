@@ -1,0 +1,232 @@
+'use strict';
+
+const http = require('node:http');
+const { readFileSync } = require('node:fs');
+const { join, resolve } = require('node:path');
+const { randomBytes } = require('node:crypto');
+
+const TYPES = {
+  '/': ['10-Веб/01-Страница.html', 'text/html; charset=utf-8'],
+  '/02-Стиль.css': ['10-Веб/02-Стиль.css', 'text/css; charset=utf-8'],
+  '/03-Приложение.js': ['10-Веб/03-Приложение.js', 'text/javascript; charset=utf-8']
+};
+
+function json(ответ, статус, данные) {
+  const тело = JSON.stringify(данные);
+  ответ.writeHead(статус, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', 'Content-Length':Buffer.byteLength(тело) });
+  ответ.end(тело);
+}
+function ошибка(сообщение, статус = 400) {
+  return Object.assign(new Error(сообщение), { httpStatus: статус });
+}
+async function телоЗапроса(запрос) {
+  if (!/^application\/json(?:;|$)/i.test(запрос.headers['content-type'] || '')) throw ошибка('Ожидается application/json',415);
+  let текст = '';
+  for await (const кусок of запрос) {
+    текст += кусок.toString('utf8');
+    if (Buffer.byteLength(текст) > 65536) throw ошибка('Запрос слишком большой',413);
+  }
+  try {
+    const объект = JSON.parse(текст);
+    if (!объект || Array.isArray(объект) || typeof объект !== 'object') throw Error();
+    return объект;
+  } catch { throw ошибка('Неверный JSON'); }
+}
+function idИзПути(путь) {
+  const совпадение = /^\/api\/chats\/(\d+)(?:\/(message|stop))?$/.exec(путь);
+  if (!совпадение) return null;
+  const ид = Number(совпадение[1]);
+  if (!Number.isSafeInteger(ид) || ид < 1) throw ошибка('Неверный номер диалога');
+  return { ид, действие: совпадение[2] || '' };
+}
+
+async function создатьВебСервер({ корень = resolve(__dirname, '..'), порт = 0 } = {}) {
+  // Reuse the existing TypeScript core, memory and cloud provider; do not duplicate response logic.
+  const [{ Ядро }, { ПамятьДиалога }, { ТестоваяМодель }, { ОблачнаяМодель }] = await Promise.all([
+    import('../01-Ядро/02-Управление.ts'),
+    import('../02-Память/01-ПамятьДиалога.ts'),
+    import('../04-Модели/02-ТестоваяМодель.ts'),
+    import('../04-Модели/03-ОблачнаяМодель.ts')
+  ]);
+  const база = new ПамятьДиалога(200, process.env.KIYOMIRA_DB_PATH || join(корень, '06-Данные', 'память.sqlite'));
+  let ключ = process.env.CLOUD_RU_API_KEY || '';
+  let модель = process.env.CLOUD_RU_MODEL || база.настройка('модель') || '';
+  let закрывается = false;
+  const активные = new Map();
+  const ожидают = new Set();
+  const демонстрация = new ТестоваяМодель();
+  const провайдер = {
+    async создатьОтвет(история, сигнал) {
+      if (ключ && модель) return new ОблачнаяМодель(ключ, модель).создатьОтвет(история, сигнал);
+      return демонстрация.создатьОтвет(история);
+    }
+  };
+  const ядро = new Ядро(провайдер, база);
+  ядро.запустить();
+  const cookie = randomBytes(32).toString('hex');
+  let origin = '';
+
+  const сервер = http.createServer(async (запрос, ответ) => {
+    const заголовки = {
+      'X-Content-Type-Options':'nosniff',
+      'X-Frame-Options':'DENY',
+      'Referrer-Policy':'no-referrer',
+      'Cross-Origin-Resource-Policy':'same-origin',
+      'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    };
+    for (const [имя, значение] of Object.entries(заголовки)) ответ.setHeader(имя, значение);
+    try {
+      if (закрывается) throw ошибка('Сервер завершает работу',503);
+      if (запрос.socket.remoteAddress !== '127.0.0.1') throw ошибка('Локальный доступ обязателен',403);
+      if (запрос.headers.host !== origin.replace('http://','')) throw ошибка('Недопустимый Host',403);
+      if (запрос.headers.origin && запрос.headers.origin !== origin) throw ошибка('Запрещённый Origin',403);
+      if (запрос.headers['sec-fetch-site'] === 'cross-site') throw ошибка('Запрещён межсайтовый запрос',403);
+      const url = new URL(запрос.url || '/', origin);
+      const путь = decodeURIComponent(url.pathname);
+      if (запрос.method === 'GET' && Object.hasOwn(TYPES, путь)) {
+        const [файл, тип] = TYPES[путь];
+        const данные = readFileSync(join(корень, файл));
+        if (путь === '/') ответ.setHeader('Set-Cookie', 'kiyomira_session=' + cookie + '; HttpOnly; SameSite=Strict; Path=/');
+        ответ.writeHead(200, { 'Content-Type':тип, 'Cache-Control':'no-store' });
+        return ответ.end(данные);
+      }
+      if (!путь.startsWith('/api/')) throw ошибка('Страница не найдена',404);
+      const cookieHeader = запрос.headers.cookie || '';
+      if (!cookieHeader.split(';').some(x => x.trim() === 'kiyomira_session=' + cookie) ||
+          запрос.headers['x-kiyomira-request'] !== '1') throw ошибка('Нет доступа к API',403);
+      if (!['GET','POST','PATCH','DELETE'].includes(запрос.method)) throw ошибка('Метод не поддерживается',405);
+      if (запрос.method === 'GET' && путь === '/api/status') {
+        return json(ответ,200,{ ready:true, provider:ключ && модель ? 'cloud':'demo', model:модель, keyPresent:!!ключ, active:активные.size });
+      }
+      if (запрос.method === 'GET' && путь === '/api/chats') return json(ответ,200,{ chats:база.списокДиалогов() });
+      if (запрос.method === 'POST' && путь === '/api/chats') {
+        const параметры = await телоЗапроса(запрос);
+        const имя = typeof параметры.title === 'string' ? параметры.title : 'Новый диалог';
+        return json(ответ,201,{ id:база.создатьДиалог(имя) });
+      }
+      if (запрос.method === 'GET' && путь === '/api/search') {
+        return json(ответ,200,{ results:база.поиск(url.searchParams.get('q') || '') });
+      }
+      if (запрос.method === 'GET' && путь === '/api/settings') {
+        return json(ответ,200,{ model:модель, keyPresent:!!ключ, secretStored:false });
+      }
+      if (запрос.method === 'POST' && путь === '/api/settings') {
+        const данные = await телоЗапроса(запрос);
+        if (активные.size) throw ошибка('Нельзя менять модель во время генерации',409);
+        if (данные.model !== undefined) {
+          if (typeof данные.model !== 'string' || данные.model.length > 200) throw ошибка('Некорректная модель');
+          модель = данные.model.trim();
+          база.установитьНастройку('модель', модель);
+        }
+        if (данные.apiKey !== undefined) {
+          if (typeof данные.apiKey !== 'string' || данные.apiKey.length > 4096) throw ошибка('Некорректный ключ');
+          if (данные.apiKey.trim()) ключ = данные.apiKey.trim();
+        }
+        if (данные.clearKey === true) ключ = '';
+        return json(ответ,200,{ model:модель, keyPresent:!!ключ, secretStored:false });
+      }
+      if (запрос.method === 'GET' && путь === '/api/models') {
+        if (!ключ) throw ошибка('Сначала укажите API-ключ Cloud.ru');
+        const models = await new ОблачнаяМодель(ключ, модель || 'проверка').получитьМодели();
+        return json(ответ,200,{ models });
+      }
+      if (запрос.method === 'POST' && путь === '/api/test') {
+        if (!ключ || !модель) throw ошибка('Укажите ключ и модель Cloud.ru');
+        const models = await new ОблачнаяМодель(ключ, модель).получитьМодели();
+        return json(ответ,200,{ ok:true, model:модель, listed:models.includes(модель) });
+      }
+      const chat = idИзПути(путь);
+      if (chat) {
+        if (!база.существуетДиалог(chat.ид)) throw ошибка('Диалог не найден',404);
+        if (запрос.method === 'GET' && !chat.действие) return json(ответ,200,{ messages:база.сообщенияДиалога(chat.ид) });
+        if (запрос.method === 'PATCH' && !chat.действие) {
+          const данные = await телоЗапроса(запрос);
+          if (typeof данные.title !== 'string' || данные.title.length > 100) throw ошибка('Некорректное название');
+          база.переименоватьДиалог(chat.ид, данные.title);
+          return json(ответ,200,{ ok:true });
+        }
+        if (запрос.method === 'DELETE' && !chat.действие) {
+          if (активные.has(chat.ид)) throw ошибка('Идёт генерация',409);
+          база.удалитьДиалог(chat.ид);
+          return json(ответ,200,{ ok:true });
+        }
+        if (запрос.method === 'POST' && chat.действие === 'stop') {
+          активные.get(chat.ид)?.abort();
+          return json(ответ,200,{ stopped:true });
+        }
+        if (запрос.method === 'POST' && chat.действие === 'message') {
+          const данные = await телоЗапроса(запрос);
+          if (typeof данные.text !== 'string' || !данные.text.trim() || данные.text.length > 20000) throw ошибка('Сообщение должно содержать 1–20000 символов');
+          if (активные.has(chat.ид)) throw ошибка('Уже выполняется ответ в этом диалоге',409);
+          const controller = new AbortController();
+          активные.set(chat.ид, controller);
+          const работа = ядро.ответить(данные.text, chat.ид, controller.signal);
+          ожидают.add(работа);
+          try {
+            const text = await работа;
+            return json(ответ,200,{ reply:text });
+          } finally {
+            ожидают.delete(работа);
+            активные.delete(chat.ид);
+          }
+        }
+      }
+      if (запрос.method === 'POST' && путь === '/api/quit') {
+        ответ.setHeader('Connection','close');
+        json(ответ,200,{ ok:true });
+        setImmediate(()=>{ void закрыть(); });
+        return;
+      }
+      throw ошибка('API не найден',404);
+    } catch (e) {
+      const status = Number.isInteger(e?.httpStatus) ? e.httpStatus : e?.name === 'AbortError' ? 409 : 500;
+      // Never send potentially secret-bearing raw network exceptions to browser or logs.
+      const message = status === 500 ? 'Операция не выполнена; проверьте настройки и подключение' : String(e.message);
+      if (!ответ.headersSent) json(ответ,status,{error:message});
+      else ответ.end();
+    }
+  });
+
+  async function закрыть() {
+    if (закрывается) return;
+    закрывается = true;
+    for (const c of активные.values()) c.abort();
+    await Promise.allSettled([...ожидают]);
+    await ядро.остановить();
+    база.закрыть();
+    await new Promise(resolveDone => {
+      сервер.close(resolveDone);
+      // Closing the program must not wait forever for an idle browser keep-alive socket.
+      сервер.closeAllConnections();
+    });
+  }
+
+  try {
+    await new Promise((resolveReady,rejectReady) => {
+      сервер.once('error',rejectReady);
+      сервер.listen(порт,'127.0.0.1',resolveReady);
+    });
+  } catch(e) { await ядро.остановить(); база.закрыть(); throw e; }
+  origin = 'http://127.0.0.1:' + сервер.address().port;
+  return { url:origin, server:сервер, close:закрыть };
+}
+
+if (require.main === module) {
+  (async () => {
+    const app = await создатьВебСервер();
+    console.log('[Kiyomira] Веб-интерфейс:', app.url);
+    if (process.send) process.send({ type:'ready', url:app.url });
+    let остановка = false;
+    const stop = () => {
+      if (остановка) return;
+      остановка = true;
+      void app.close().then(() => { console.log('[Kiyomira] Веб-сервер остановлен'); if (process.connected) process.disconnect(); process.exit(0); }).catch(() => { if (process.connected) process.disconnect(); process.exit(1); });
+    };
+    // A browser-initiated /api/quit closes the server directly; that must also stop the child process.
+    app.server.once('close',stop);
+    process.on('SIGINT',stop);
+    process.on('SIGTERM',stop);
+    process.on('message',x=>{ if (x?.type === 'shutdown') stop(); });
+  })().catch(() => { console.error('[Kiyomira] Ошибка запуска веб-сервера'); process.exitCode=1; });
+}
+module.exports = { создатьВебСервер };

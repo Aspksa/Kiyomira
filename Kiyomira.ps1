@@ -243,42 +243,54 @@ function Clean-OldStages {
   } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }
 function Check-Source {
-  # Local recovery uses a SHA-256-verified snapshot, not an unsigned internet script.
+  # Recover missing loader files from verified local copies; never roll back legitimate GitHub updates.
   $safeRoot = Join-Path $runtime 'РезервЗагрузчика'
   $manifest = Join-Path $safeRoot 'контроль.json'
-  $names = @('Kiyomira.cjs','08-Запуск/01-Пуск.cjs','08-Запуск/02-Предпроверка.cjs')
-  if (-not (Test-Path -LiteralPath $manifest)) {
-    foreach ($name in $names) {
-      if (-not (Test-Path -LiteralPath (Join-Path $project $name))) { throw "Source file missing before first backup: $name" }
+  $names = @(
+    'Kiyomira.cjs',
+    '08-Запуск/01-Пуск.cjs',
+    '08-Запуск/02-Предпроверка.cjs',
+    '08-Запуск/03-РезервSQLite.cjs',
+    '08-Запуск/04-ВебСервер.cjs',
+    '10-Веб/01-Страница.html',
+    '10-Веб/02-Стиль.css',
+    '10-Веб/03-Приложение.js'
+  )
+  New-Item -ItemType Directory -Force -Path $safeRoot | Out-Null
+  $previous = @{}
+  if (Test-Path -LiteralPath $manifest) {
+    $parsed = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+    $entries = if ($null -ne $parsed.files) { @($parsed.files) } else { @($parsed) }
+    foreach ($entry in $entries) {
+      $name = [string]$entry.path
+      if ($name -notin $names) { throw 'Unexpected file in recovery manifest' }
+      $previous[$name] = [string]$entry.sha256
     }
-    New-Item -ItemType Directory -Force -Path $safeRoot | Out-Null
-    $entries = @()
-    foreach ($name in $names) {
-      $file = Join-Path $project $name
-      $target = Join-Path $safeRoot ($name -replace '[/\\]', '_')
-      Copy-Item -LiteralPath $file -Destination $target
-      $entries += @{ path = $name; sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash }
-    }
-    [IO.File]::WriteAllText($manifest, ((@{ files = $entries } | ConvertTo-Json -Depth 5)), (New-Object Text.UTF8Encoding($false)))
   }
-  $parsed = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
-  $entries = if ($null -ne $parsed.files) { $parsed.files } else { $parsed }
-  if (-not $entries) { throw 'Recovery manifest is empty' }
-  foreach ($entry in $entries) {
-    $name = [string]$entry.path
-    if ($name -notin $names) { throw 'Unexpected file in recovery manifest' }
+  $updated = @()
+  foreach ($name in $names) {
     $file = Join-Path $project $name
-    $expected = [string]$entry.sha256
-    $current = (Test-Path -LiteralPath $file) -and ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -eq $expected)
-    if ($current) { continue }
     $backup = Join-Path $safeRoot ($name -replace '[/\\]', '_')
-    if (-not (Test-Path -LiteralPath $backup) -or (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash -ne $expected) {
-      throw "Recovery backup is missing or damaged: $name"
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+      if (-not $previous.ContainsKey($name) -or -not (Test-Path -LiteralPath $backup -PathType Leaf) -or
+          (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash -ne $previous[$name]) {
+        throw "Cannot safely restore missing source file: $name"
+      }
+      New-Item -ItemType Directory -Force -Path (Split-Path -Path $file -Parent) | Out-Null
+      Copy-Item -LiteralPath $backup -Destination $file -Force
+      Stage "Restored missing loader file: $name"
     }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Path $file -Parent) | Out-Null
-    Copy-Item -LiteralPath $backup -Destination $file -Force
-    Stage "Restored damaged loader file: $name"
+    $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+    if (-not (Test-Path -LiteralPath $backup -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash -ne $hash) {
+      # The file exists: treat changed contents as an application update, not an automatic rollback.
+      Copy-Item -LiteralPath $file -Destination $backup -Force
+    }
+    $updated += @{ path = $name; sha256 = $hash }
   }
+  $tempManifest = "$manifest.новый"
+  [IO.File]::WriteAllText($tempManifest, ((@{ files = $updated } | ConvertTo-Json -Depth 5)), (New-Object Text.UTF8Encoding($false)))
+  Move-Item -LiteralPath $tempManifest -Destination $manifest -Force
   foreach ($name in @('01-Ядро/01-Запуск.ts','02-Память/01-ПамятьДиалога.ts')) {
     if (-not (Test-Path -LiteralPath (Join-Path $project $name))) { throw "Missing TypeScript source: $name" }
   }

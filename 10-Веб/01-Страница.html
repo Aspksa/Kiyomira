@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<title>Kiyomira — личный чат</title>
+<link rel="stylesheet" href="/02-Стиль.css">
+<script src="/03-Приложение.js" defer></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="rail" aria-label="Главное меню">
+    <div class="rail-logo" aria-label="Kiyomira">狐</div>
+    <div class="rail-group">
+      <button type="button" id="nav-chat" class="active" data-tip="Диалоги" aria-label="Диалоги" title="Диалоги"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg></button>
+      <button type="button" id="nav-search" data-tip="Поиск" aria-label="Поиск по истории" title="Поиск"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m15.7 15.7 5.2 5.2"/></svg></button>
+    </div>
+    <div class="rail-group rail-bottom">
+      <button type="button" id="nav-settings" data-tip="Настройки" aria-label="Настройки" title="Настройки"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
+  </nav>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="section-kicker">ПРОСТРАНСТВО KIYOMIRA</div>
+      <h2>Диалоги</h2>
+      <button type="button" id="new-chat" class="primary full"><span aria-hidden="true">＋</span> Новый диалог</button>
+    </div>
+    <div id="chat-list" class="chat-list" aria-label="История диалогов"></div>
+    <div class="sidebar-foot"><span class="small-dot"></span> Память хранится локально в SQLite</div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="brand"><strong>KIYOMIRA</strong><span id="subtitle">Личное пространство</span></div>
+      <div class="header-right">
+        <span class="status" id="connection">Проверка...</span>
+        <button type="button" id="mobile-list" class="icon-button mobile-only" aria-label="Показать диалоги">☰</button>
+      </div>
+    </header>
+    <section id="chat-view" class="chat-view">
+      <div class="conversation-head">
+        <div>
+          <div class="section-kicker">ИСТОРИЯ БЕСЕДЫ</div>
+          <h1 id="chat-title">Новый диалог</h1>
+        </div>
+        <div class="conversation-actions">
+          <button type="button" id="rename-chat" class="icon-button" title="Переименовать" aria-label="Переименовать диалог">✎</button>
+          <button type="button" id="delete-chat" class="icon-button danger" title="Удалить" aria-label="Удалить диалог">×</button>
+        </div>
+      </div>
+      <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Сообщения">
+        <div class="empty"><span class="empty-symbol">狐</span><h2>Чем я могу помочь?</h2><p>Всё, что мы сохраняем, остаётся в SQLite на твоём устройстве.</p></div>
+      </div>
+      <div class="composer-wrap">
+        <form id="chat-form" class="composer">
+          <label class="visually-hidden" for="chat-input">Сообщение</label>
+          <textarea id="chat-input" rows="2" maxlength="20000" placeholder="Напишите сообщение..." required></textarea>
+          <div class="composer-foot">
+            <span class="composer-tip">Enter — отправить · Shift+Enter — новая строка</span>
+            <div class="composer-actions">
+              <button type="button" id="stop-response" class="secondary" hidden>Остановить</button>
+              <button type="submit" id="send" class="primary">Отправить ↗</button>
+            </div>
+          </div>
+        </form>
+        <p id="notice" class="notice" role="status"></p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="overlay" class="overlay" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <div class="dialog-head"><h2 id="dialog-title">Настройки</h2><button type="button" id="dialog-close" class="icon-button" aria-label="Закрыть">×</button></div>
+    <section id="settings-panel" class="settings-panel" hidden>
+      <p class="hint">Ключ Cloud.ru хранится только в памяти текущего процесса. Он не записывается в SQLite, не выводится в браузер и потребуется снова после перезапуска.</p>
+      <form id="settings-form">
+        <label for="api-key">API-ключ Cloud.ru</label>
+        <input type="password" id="api-key" placeholder="Введите ключ (не отображается после сохранения)" autocomplete="off">
+        <label for="model-name">Основная модель</label>
+        <input id="model-name" type="text" maxlength="200" list="models-list" placeholder="Название модели Cloud.ru" autocomplete="off">
+        <datalist id="models-list"></datalist>
+        <div class="settings-actions">
+          <button type="submit" class="primary">Сохранить</button>
+          <button type="button" id="refresh-models">Список моделей</button>
+          <button type="button" id="test-cloud">Проверить Cloud.ru</button>
+          <button type="button" id="clear-key" class="danger">Сбросить ключ</button>
+          <button type="button" id="quit-app" class="danger">Завершить программу</button>
+        </div>
+      </form>
+      <p class="hint" id="key-state"></p>
+      <p id="settings-feedback" class="notice" role="status"></p>
+    </section>
+    <section id="search-panel" hidden>
+      <label for="search-input">Поиск по истории</label>
+      <input id="search-input" type="search" placeholder="Введите минимум 2 символа">
+      <div id="search-results" class="search-results" role="list"></div>
+      <p class="hint">Поиск по последним 5000 сообщениям, без отправки данных в облако.</p>
+    </section>
+  </div>
+</div>
+</body>
+</html>

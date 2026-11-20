@@ -16,7 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
-      - name: TypeScript and SQLite unit tests
+      - name: Validate browser and launcher JavaScript
+        run: npm run check-web
+      - name: TypeScript, web API and SQLite unit tests
         run: npm test
       - name: Run self-check
         run: npm run preflight
@@ -26,51 +28,76 @@ jobs:
   portable_windows:
     name: Переносимость Windows
     runs-on: windows-latest
+    timeout-minutes: 3
+    env:
+      KIYOMIRA_OFFLINE: '1'
+      KIYOMIRA_SKIP_PYTHON: '1'
+      KIYOMIRA_NO_BROWSER: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
-      - name: Validate PowerShell syntax, hashes and offline BAT from special paths
+      - name: Prepare special-character portable folder and verify PowerShell
         shell: pwsh
         run: |
-          $source = (Get-Location).Path
-          $name = 'Рабочий стол & (тест) ! ^ % ;'
-          $folder = Join-Path $env:RUNNER_TEMP $name
+          $source=(Get-Location).Path
+          $folder=Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
           New-Item -ItemType Directory -Force -Path $folder | Out-Null
           foreach ($file in 'Kiyomira.bat','Kiyomira.ps1','Kiyomira.cjs','package.json') {
             Copy-Item -LiteralPath (Join-Path $source $file) -Destination $folder
           }
-          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','08-Запуск') {
+          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','05-Проверки','08-Запуск','10-Веб') {
             Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $folder -Recurse
           }
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Kiyomira.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $folder 'Kiyomira.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count) { throw ($errors | Out-String) }
-          $nodeDir = Join-Path $folder '09-Окружение/Нода'
+          $nodeDir=Join-Path $folder '09-Окружение/Нода'
           New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
-          $installed = (Get-Command node.exe).Source
-          Copy-Item -LiteralPath $installed -Destination (Join-Path $nodeDir 'node.exe')
-          $hash = (Get-FileHash -LiteralPath (Join-Path $nodeDir 'node.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
-          $manifest = @{files=@(@{path='node.exe';sha256=$hash})} | ConvertTo-Json -Depth 5
+          Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $nodeDir 'node.exe')
+          $hash=(Get-FileHash -LiteralPath (Join-Path $nodeDir 'node.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest=@{files=@(@{path='node.exe';sha256=$hash})} | ConvertTo-Json -Depth 5
           [IO.File]::WriteAllText((Join-Path $nodeDir 'проверка-файлов.json'),$manifest,(New-Object Text.UTF8Encoding($false)))
-          $env:KIYOMIRA_OFFLINE='1'
-          $env:KIYOMIRA_SKIP_PYTHON='1'
+      - name: BAT CLI first offline launch
+        shell: pwsh
+        env:
+          KIYOMIRA_MODE: cli
+        run: |
+          $folder=Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
           Push-Location $folder
           try {
             '/exit' | & '.\Kiyomira.bat'
-            if ($LASTEXITCODE -ne 0) { throw "BAT returned $LASTEXITCODE" }
+            if ($LASTEXITCODE -ne 0) { throw "CLI first exit: $LASTEXITCODE" }
             if (-not (Test-Path -LiteralPath '06-Данные/память.sqlite')) { throw 'SQLite not created' }
             if (Test-Path -LiteralPath '06-Данные/запуск.lock') { throw 'Node lock not released' }
-            $cache = Join-Path $folder '09-Окружение/РезервЗагрузчика/контроль.json'
-            if (-not (Test-Path -LiteralPath $cache)) { throw 'Recovery cache missing' }
-            # A second launch must work offline.
-            '/exit' | & '.\Kiyomira.bat'
-            if ($LASTEXITCODE -ne 0) { throw 'Offline relaunch failed' }
+            if (-not (Test-Path -LiteralPath '09-Окружение/РезервЗагрузчика/контроль.json')) { throw 'Loader backup missing' }
           } finally { Pop-Location }
-          $longBase = Join-Path $env:RUNNER_TEMP ('Д' * 110)
-          $longFolder = Join-Path $longBase ('П' * 106)
+      - name: BAT CLI repeated offline launch
+        shell: pwsh
+        env:
+          KIYOMIRA_MODE: cli
+        run: |
+          $folder=Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
+          Push-Location $folder
+          try {
+            '/exit' | & '.\Kiyomira.bat'
+            if ($LASTEXITCODE -ne 0) { throw "CLI second exit: $LASTEXITCODE" }
+          } finally { Pop-Location }
+      - name: BAT web startup API chat and graceful shutdown
+        shell: pwsh
+        run: |
+          $source=(Get-Location).Path
+          $folder=Join-Path $env:RUNNER_TEMP 'Рабочий стол & (тест) ! ^ % ;'
+          & node (Join-Path $source '05-Проверки/06-ВебBAT.cjs') $folder
+          if ($LASTEXITCODE -ne 0) { throw 'Windows BAT web smoke failed' }
+      - name: Long Unicode path preflight
+        shell: pwsh
+        run: |
+          $source=(Get-Location).Path
+          $longBase=Join-Path $env:RUNNER_TEMP ('Д' * 110)
+          $longFolder=Join-Path $longBase ('П' * 106)
           New-Item -ItemType Directory -Path $longFolder -Force | Out-Null
           foreach ($sub in '01-Ядро','02-Память','08-Запуск') {
             Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $longFolder -Recurse
