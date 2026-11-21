@@ -133,6 +133,23 @@ export class ПамятьДиалога {
     )`);
     this.база.prepare(`INSERT OR IGNORE INTO личность_контрольные_точки(имя)
       VALUES('assistant-answers')`).run();
+    // All autonomous work can be paused by the user without losing the cursor.
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_разрешения (
+      ключ TEXT PRIMARY KEY, разрешено INTEGER NOT NULL CHECK(разрешено IN (0,1))
+    )`);
+    this.база.prepare(`INSERT OR IGNORE INTO личность_разрешения(ключ,разрешено)
+      VALUES('background-learning',1)`).run();
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_эксперименты (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      отпечаток TEXT NOT NULL UNIQUE,
+      образцов INTEGER NOT NULL,
+      точность_текущая INTEGER NOT NULL,
+      точность_кандидат INTEGER NOT NULL,
+      результат TEXT NOT NULL,
+      создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.prepare(`INSERT OR IGNORE INTO личность_цели(ключ,название,статус)
+      VALUES('retrieval-quality','Проверять локальные стратегии поиска на подтверждённых источниках','наблюдение')`).run();
     // Deleting the user's record also deletes its derived personal experience.
     this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_личность_очистить_источник
       AFTER DELETE ON сообщения BEGIN
@@ -453,18 +470,89 @@ export class ПамятьДиалога {
       .get() as {n:number}).n;
     const cursor=(this.база.prepare(`SELECT последний_ид FROM личность_контрольные_точки
       WHERE имя='assistant-answers'`).get() as {последний_ид:number}).последний_ид;
+    const learningEnabled=this.разрешеноРазвитиеЛичности();
+    const experiments=this.база.prepare(`SELECT ид,образцов,точность_текущая,
+      точность_кандидат,результат,создано
+      FROM личность_эксперименты ORDER BY ид DESC LIMIT 3`).all();
     const pending=(this.база.prepare(`SELECT count(*) AS n FROM сообщения
       WHERE диалог_ид IS NOT NULL AND роль='ассистент' AND ид>?`
     ).get(cursor) as {n:number}).n;
     return {имя:core.имя,версия:core.версия,создано:core.создано,
       состояние:'ожидание',опыта:count,ожидает:pending,
-      цели:goals,навыки:skills,события:events,
+      цели:goals,навыки:skills,события:events,развитие_включено:learningEnabled,
+      эксперименты:experiments,
       правила:'Изменения характера, кода, полномочий и платных вызовов требуют одобрения'};
+  }
+
+  разрешеноРазвитиеЛичности():boolean{
+    const row=this.база.prepare(`SELECT разрешено FROM личность_разрешения
+      WHERE ключ='background-learning'`).get() as {разрешено:number};
+    return row.разрешено===1;
+  }
+  настроитьРазвитиеЛичности(разрешено:boolean){
+    if(typeof разрешено!=='boolean')throw new Error('Требуется явное разрешение');
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      this.база.prepare(`UPDATE личность_разрешения SET разрешено=?
+        WHERE ключ='background-learning'`).run(разрешено?1:0);
+      this.база.prepare(`INSERT INTO личность_журнал
+        (действие,обработано,последний_источник_ид)
+        VALUES(?,0,0)`).run(разрешено?'Фоновая проверка опыта возобновлена':'Фоновая проверка опыта приостановлена');
+      this.база.exec('COMMIT');
+      return this.состояниеЛичности();
+    }catch(err){this.база.exec('ROLLBACK');throw err;}
+  }
+
+  // Repeatable, fully local experiment on a bounded set of approved facts.
+  // Never changes active retrieval without explicit approval. Improvement
+  // here describes only these exact samples, not general intelligence.
+  экспериментКачестваПоиска(){
+    if(!this.разрешеноРазвитиеЛичности())return {проверено:0,причина:'пауза'};
+    const rows=this.база.prepare(`SELECT ид,источник_ид,ключ,значение
+      FROM факты_кандидаты WHERE статус='подтверждено'
+      ORDER BY ид DESC LIMIT 12`
+    ).all() as {ид:number;источник_ид:number;ключ:string;значение:string}[];
+    // At least 3 independent sources to avoid one conversation posing as an evaluation set.
+    const used=new Set<number>();
+    const examples=rows.filter(row=>{
+      if(used.has(row.источник_ид))return false;
+      used.add(row.источник_ид);
+      return true;
+    }).slice(0,5);
+    if(examples.length<3)return {проверено:0,причина:'мало подтверждённых источников'};
+    const fingerprint=createHash('sha256').update(examples.map(x=>
+      [x.ид,x.источник_ид,x.ключ,x.значение].join('|')).join('\n')).digest('hex');
+    if(this.база.prepare('SELECT ид FROM личность_эксперименты WHERE отпечаток=?')
+      .get(fingerprint))return {проверено:0,причина:'уже проверено'};
+    let baseline=0,candidate=0;
+    const start=performance.now();
+    for(const row of examples){
+      // A query derived from each approved key. It is an exact-source test.
+      const query=row.ключ+' '+row.значение;
+      if(this.поискГибридный(query,8).some(m=>m.ид===row.источник_ид))baseline++;
+      if(this.единыйПоискПамяти(query,12).some(m=>m.тип==='факт'&&m.ид===row.ид))candidate++;
+    }
+    const result=candidate>baseline?'кандидат_лучше_на_образцах':
+      candidate===baseline?'равно_на_образцах':'текущий_лучше_на_образцах';
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      this.база.prepare(`INSERT OR IGNORE INTO личность_эксперименты
+        (отпечаток,образцов,точность_текущая,точность_кандидат,результат)
+        VALUES(?,?,?,?,?)`).run(fingerprint,examples.length,baseline,candidate,result);
+      this.база.prepare(`UPDATE личность_цели SET прогресс=прогресс+?,
+        изменено=CURRENT_TIMESTAMP WHERE ключ='retrieval-quality'`).run(examples.length);
+      this.база.prepare(`INSERT INTO личность_журнал(действие,обработано)
+        VALUES('Локальное сравнение стратегий поиска',?)`).run(examples.length);
+      this.база.exec('COMMIT');
+      this.recordTime('personaExperiment',start);
+      return {проверено:examples.length,результат:result,текущая:baseline,кандидат:candidate};
+    }catch(err){this.база.exec('ROLLBACK');throw err;}
   }
 
   // Process only actually persisted completed assistant messages. No
   // autonomous LLM calls, fabricated emotions, or self-modifying code.
   обработатьОпытЛичности(лимит=8){
+    if(!this.разрешеноРазвитиеЛичности())return {обработано:0,пауза:true};
     const cap=Math.max(1,Math.min(16,Math.trunc(лимит)||8));
     const cursor=(this.база.prepare(`SELECT последний_ид FROM личность_контрольные_точки
       WHERE имя='assistant-answers'`).get() as {последний_ид:number}).последний_ид;

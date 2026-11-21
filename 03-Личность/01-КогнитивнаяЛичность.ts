@@ -36,6 +36,8 @@ export class КогнитивнаяЛичность {
   }
   // Idle-only bounded database work; yields and never contacts any model.
   обработатьОпыт(лимит=8){return this.память.обработатьОпытЛичности(лимит);}
+  оценитьПоиск(){return this.память.экспериментКачестваПоиска();}
+  разрешитьРазвитие(вкл:boolean){return this.память.настроитьРазвитиеЛичности(вкл);}
 }
 
 export const ВнешнийОбразЛичности=IDENTITY;
