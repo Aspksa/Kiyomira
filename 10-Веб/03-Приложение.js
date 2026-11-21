@@ -112,6 +112,7 @@ async function pollBrainEvents() {
     if(event.id<=state.brainEventId)continue;
     state.brainEventId=event.id;
     window.KiyomiraBrain?.eventActivity(event);
+    window.KiyomiraPersona?.eventActivity(event);
     el('workspace').dataset.activity=event.type;
     if(event.type==='контекст')window.KiyomiraUnity?.signal('recall',event.sources||[]);
     if(event.type==='ответ')window.KiyomiraUnity?.signal('answer');
