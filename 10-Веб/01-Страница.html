@@ -8,7 +8,9 @@
 <title>Kiyomira — когнитивная система</title>
 <link rel="stylesheet" href="/02-Стиль.css">
 <link rel="stylesheet" href="/05-ЕдиныйИнтерфейс.css">
+<link rel="stylesheet" href="/06-Личность.css">
 <script src="/04-Мозг.js" defer></script>
+<script src="/07-Личность.js" defer></script>
 <script src="/03-Приложение.js" defer></script>
 </head>
 <body>
@@ -45,6 +47,50 @@
       <canvas id="cognitive-comets" class="cognitive-comets" aria-hidden="true"></canvas>
       <section class="brain-panel" aria-label="Визуальная карта диалогов">
         <header class="brain-head"><div><div class="section-kicker">COGNITIVE CORE / SQLITE · КЛАСТЕРЫ</div><h1>Мозг Kiyomira</h1></div><span id="brain-live" class="brain-live">ОЖИДАНИЕ</span></header>
+        <div class="persona-sky" id="persona-sky" data-phase="idle">
+          <details class="persona-card" id="persona-card">
+            <summary aria-label="Kiyomira — сведения о личности и развитии">
+              <svg class="persona-fox" viewBox="0 0 142 114" role="img" aria-label="Образ лисы Kiyomira">
+                <defs>
+                  <linearGradient id="ki-persona-hair" x1="0" y1="0" x2=".4" y2="1"><stop stop-color="#fff0ca"/><stop offset="1" stop-color="#a98f6c"/></linearGradient>
+                  <linearGradient id="ki-persona-gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fbe5ad"/><stop offset="1" stop-color="#b47a38"/></linearGradient>
+                </defs>
+                <g class="persona-tails" fill="none" stroke="#bd904f" stroke-width="2" stroke-linecap="round">
+                  <path d="M71 102 C23 96 6 63 21 25 C7 31 4 62 25 91"/>
+                  <path d="M71 102 C21 98 10 78 24 38 C12 64 21 88 42 98"/>
+                  <path d="M71 102 C29 100 22 78 35 47 C26 70 39 93 55 100"/>
+                  <path d="M71 102 C46 92 40 68 49 47"/>
+                  <path d="M71 102 C96 92 102 68 93 47"/>
+                  <path d="M71 102 C113 100 120 78 107 47 C116 70 103 93 87 100"/>
+                  <path d="M71 102 C121 98 132 78 118 38 C130 64 121 88 100 98"/>
+                  <path d="M71 102 C119 96 136 63 121 25 C135 31 138 62 117 91"/>
+                </g>
+                <path d="M48 43 L40 8 Q53 13 62 28 Q71 23 80 28 Q89 13 102 8 L94 43" fill="#35291f" stroke="#daa85e" stroke-width="1.8"/>
+                <path d="M43 80 Q43 30 58 25 Q71 16 84 25 Q99 30 99 80 L108 108 L34 108Z" fill="url(#ki-persona-hair)" opacity=".9"/>
+                <path d="M41 113 Q45 88 58 86 L84 86 Q97 88 101 113" fill="#161414" stroke="#d0a76a" stroke-width="1.2"/>
+                <path d="M61 81 L60 96 Q71 105 82 96 L81 81" fill="#ddbd96"/>
+                <path d="M50 49 Q52 29 71 30 Q91 29 92 49 L88 73 Q82 88 71 89 Q60 88 54 73Z" fill="#e2c49d" stroke="#b48d66" stroke-width=".8"/>
+                <path d="M48 65 Q39 46 57 26 Q56 53 51 81Z M94 65 Q103 46 85 26 Q86 53 91 81Z" fill="#f6dfb7"/>
+                <path d="M56 56 Q62 53 67 57 M75 57 Q80 53 86 56" stroke="#8d693b" fill="none" stroke-width="1.6" stroke-linecap="round"/>
+                <path d="M58 61 Q64 64 68 61 M74 61 Q78 64 84 61" stroke="#dd9f39" fill="none" stroke-width="2.4" stroke-linecap="round"/>
+                <path d="M70 63 L69 74 L73 74" stroke="#987c61" fill="none" stroke-width=".9"/>
+                <path d="M65 79 Q71 83 77 79" stroke="#ae775e" fill="none" stroke-width="1.2" stroke-linecap="round"/>
+                <path d="M59 94 Q71 102 83 94" fill="none" stroke="url(#ki-persona-gold)" stroke-width="2"/>
+                <circle class="persona-spark" cx="108" cy="42" r="2.2" fill="#ffdba1"/>
+              </svg>
+              <span class="persona-text"><strong>KIYOMIRA</strong><span id="persona-state">ЛИЧНОСТЬ · ОЖИДАНИЕ</span></span>
+              <span class="persona-open" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="persona-popover">
+              <div class="persona-popover-title">Личность Kiyomira</div>
+              <p id="persona-character">Внимательная, спокойная, любознательная и тёплая помощница.</p>
+              <p id="persona-growth">Опыт: проверка данных...</p>
+              <p id="persona-goal">Цель: контроль сохранённых ответов</p>
+              <p id="persona-activity">Изменения личности и кода — только с разрешения.</p>
+            </div>
+          </details>
+          <div class="persona-bridge" aria-hidden="true"></div>
+        </div>
         <div class="brain-stage"><canvas id="brain-canvas" aria-label="Интерактивная карта диалогов и сообщений"></canvas></div>
         <div class="brain-controls" role="group" aria-label="Режим карты">
           <button type="button" data-brain-mode="circle" class="selected" aria-pressed="true">Круг</button>
