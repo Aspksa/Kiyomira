@@ -22,6 +22,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     const html=await front.text();
     assert.match(html,/Kiyomira — когнитивная система/);
     assert.match(html,/id="workspace-divider"/);
+    assert.match(html,/id="persona-sky"/);
+    assert.match(html,/class="persona-fox"/);
+    assert.match(html,/07-Личность.js/);
     assert.match(html,/unified-workspace/);
     assert.match(html,/id="brain-auto-layout"/);
     assert.match(html,/data-brain-mode="timeline"/);
@@ -93,6 +96,12 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(brainSource,/brain.camera/);
     assert.match(brainSource,/mode==='honeycomb'/);
     assert.match(brainSource,/if\(active&&!motion.matches&&edges.length\)/);
+    const personaAsset=await fetch(url('/07-Личность.js'));
+    assert.equal(personaAsset.status,200);
+    assert.match(await personaAsset.text(),/KiyomiraPersona/);
+    const personaCss=await fetch(url('/06-Личность.css'));
+    assert.equal(personaCss.status,200);
+    assert.match(await personaCss.text(),/prefers-reduced-motion/);
     const cssAsset=await fetch(url('/02-Стиль.css'));
     assert.equal(cssAsset.status,200);
     const unifiedAsset=await fetch(url('/05-ЕдиныйИнтерфейс.css'));
@@ -133,6 +142,12 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal((await request('/api/memory/embeddings/search','POST',{query:'sqlite'})).status,400);
     assert.equal(emptyBrain.data.aggregateLimit,10000);
     assert.equal(emptyBrain.data.sampledMessages,0);
+    const persona=await request('/api/personality');
+    assert.equal(persona.status,200);
+    assert.equal(persona.data.personality.имя,'Kiyomira');
+    assert.equal(persona.data.personality.опыта,0);
+    assert.equal((await fetch(url('/api/personality'))).status,403);
+    assert.equal((await request('/api/personality','POST',{})).status,404);
     const chats=await request('/api/chats');
     assert.deepEqual(chats.data.chats,[]);
     const first=await request('/api/chats','POST',{title:'Главный чат'});

@@ -82,6 +82,64 @@ export class ПамятьДиалога {
       if(!exists)this.база.exec("INSERT INTO сообщения_fts(сообщения_fts) VALUES('rebuild')");
       this.ftsReady=true;
     }catch{this.ftsReady=false;}
+    // Kiyomira's own history is separate from the user's knowledge graph.
+    // The identity record is not user-writable and survives chat deletion.
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_ядро (
+      ид INTEGER PRIMARY KEY CHECK(ид=1), имя TEXT NOT NULL,
+      версия INTEGER NOT NULL DEFAULT 1, создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.prepare("INSERT OR IGNORE INTO личность_ядро(ид,имя) VALUES(1,'Kiyomira')").run();
+    const identity=this.база.prepare('SELECT имя,версия FROM личность_ядро WHERE ид=1')
+      .get() as {имя:string;версия:number};
+    if(identity.имя!=='Kiyomira'||identity.версия<1)
+      throw new Error('Несоответствие защищённой идентичности Kiyomira');
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_опыт (
+      сообщение_ид INTEGER PRIMARY KEY,
+      диалог_ид INTEGER NOT NULL,
+      вид TEXT NOT NULL,
+      результат TEXT NOT NULL,
+      время TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec('CREATE INDEX IF NOT EXISTS idx_личность_опыт_время ON личность_опыт(время,сообщение_ид)');
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_цели (
+      ключ TEXT PRIMARY KEY, название TEXT NOT NULL,
+      статус TEXT NOT NULL CHECK(статус IN ('наблюдение','проверка','завершено')),
+      прогресс INTEGER NOT NULL DEFAULT 0,
+      изменено TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.prepare(`INSERT OR IGNORE INTO личность_цели(ключ,название,статус)
+      VALUES('dialogue-integrity','Проверять сохранность завершённых диалогов','наблюдение')`).run();
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_навыки (
+      ключ TEXT PRIMARY KEY, проверенных_событий INTEGER NOT NULL DEFAULT 0,
+      описание TEXT NOT NULL, изменено TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.prepare(`INSERT OR IGNORE INTO личность_навыки(ключ,описание)
+      VALUES('dialogue-integrity','Регистрация корректно завершённых ответов, не оценка интеллектуального качества')`).run();
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_рефлексия (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      сообщение_ид INTEGER NOT NULL UNIQUE,
+      оценка TEXT NOT NULL,
+      подтверждено INTEGER NOT NULL CHECK(подтверждено IN (0,1)),
+      создано TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_журнал (
+      ид INTEGER PRIMARY KEY AUTOINCREMENT,
+      действие TEXT NOT NULL, обработано INTEGER NOT NULL DEFAULT 0,
+      последний_источник_ид INTEGER NOT NULL DEFAULT 0,
+      время TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    this.база.exec(`CREATE TABLE IF NOT EXISTS личность_контрольные_точки (
+      имя TEXT PRIMARY KEY, последний_ид INTEGER NOT NULL DEFAULT 0
+    )`);
+    this.база.prepare(`INSERT OR IGNORE INTO личность_контрольные_точки(имя)
+      VALUES('assistant-answers')`).run();
+    // Deleting the user's record also deletes its derived personal experience.
+    this.база.exec(`CREATE TRIGGER IF NOT EXISTS idx_личность_очистить_источник
+      AFTER DELETE ON сообщения BEGIN
+      DELETE FROM личность_опыт WHERE сообщение_ид=old.ид;
+      DELETE FROM личность_рефлексия WHERE сообщение_ид=old.ид;
+      DELETE FROM личность_журнал WHERE последний_источник_ид=old.ид;
+    END`);
     // Source links belong to the completed assistant message; not speculative
     // model citations. Every ID is resolved from an actual SQLite row.
     this.база.exec(`CREATE TABLE IF NOT EXISTS источники_ответов (
@@ -379,6 +437,69 @@ export class ПамятьДиалога {
         ).run(Number(result.lastInsertRowid),fact.значение);
       }
     }
+  }
+
+  состояниеЛичности(){
+    const core=this.база.prepare('SELECT имя,версия,создано FROM личность_ядро WHERE ид=1')
+      .get() as {имя:string;версия:number;создано:string};
+    const goals=this.база.prepare(`SELECT ключ,название,статус,прогресс
+      FROM личность_цели ORDER BY ключ LIMIT 12`).all() as
+        {ключ:string;название:string;статус:string;прогресс:number}[];
+    const skills=this.база.prepare(`SELECT ключ,описание,проверенных_событий
+      FROM личность_навыки ORDER BY ключ LIMIT 12`).all();
+    const events=this.база.prepare(`SELECT сообщение_ид,вид,результат,время
+      FROM личность_опыт ORDER BY сообщение_ид DESC LIMIT 8`).all();
+    const count=(this.база.prepare('SELECT count(*) AS n FROM личность_опыт')
+      .get() as {n:number}).n;
+    const cursor=(this.база.prepare(`SELECT последний_ид FROM личность_контрольные_точки
+      WHERE имя='assistant-answers'`).get() as {последний_ид:number}).последний_ид;
+    const pending=(this.база.prepare(`SELECT count(*) AS n FROM сообщения
+      WHERE диалог_ид IS NOT NULL AND роль='ассистент' AND ид>?`
+    ).get(cursor) as {n:number}).n;
+    return {имя:core.имя,версия:core.версия,создано:core.создано,
+      состояние:'ожидание',опыта:count,ожидает:pending,
+      цели:goals,навыки:skills,события:events,
+      правила:'Изменения характера, кода, полномочий и платных вызовов требуют одобрения'};
+  }
+
+  // Process only actually persisted completed assistant messages. No
+  // autonomous LLM calls, fabricated emotions, or self-modifying code.
+  обработатьОпытЛичности(лимит=8){
+    const cap=Math.max(1,Math.min(16,Math.trunc(лимит)||8));
+    const cursor=(this.база.prepare(`SELECT последний_ид FROM личность_контрольные_точки
+      WHERE имя='assistant-answers'`).get() as {последний_ид:number}).последний_ид;
+    const messages=this.база.prepare(`SELECT ид,диалог_ид FROM сообщения
+      WHERE роль='ассистент' AND диалог_ид IS NOT NULL AND ид>?
+      ORDER BY ид ASC LIMIT ?`).all(cursor,cap) as {ид:number;диалог_ид:number}[];
+    if(!messages.length)return {обработано:0,последний_ид:cursor};
+    this.база.exec('BEGIN IMMEDIATE');
+    try{
+      const add=this.база.prepare(`INSERT OR IGNORE INTO личность_опыт
+        (сообщение_ид,диалог_ид,вид,результат) VALUES(?,?,'завершённый_ответ','Ответ целиком сохранён в SQLite')`);
+      const reflection=this.база.prepare(`INSERT OR IGNORE INTO личность_рефлексия
+        (сообщение_ид,оценка,подтверждено) VALUES(?,'Сохранение проверено; качество содержания не оценено',1)`);
+      let added=0;
+      for(const msg of messages){
+        added+=add.run(msg.ид,msg.диалог_ид).changes;
+        reflection.run(msg.ид);
+      }
+      const last=messages[messages.length-1].ид;
+      this.база.prepare(`UPDATE личность_контрольные_точки SET последний_ид=?
+        WHERE имя='assistant-answers'`).run(last);
+      if(added){
+        this.база.prepare(`UPDATE личность_цели
+          SET прогресс=прогресс+?,изменено=CURRENT_TIMESTAMP
+          WHERE ключ='dialogue-integrity'`).run(added);
+        this.база.prepare(`UPDATE личность_навыки
+          SET проверенных_событий=проверенных_событий+?,изменено=CURRENT_TIMESTAMP
+          WHERE ключ='dialogue-integrity'`).run(added);
+        this.база.prepare(`INSERT INTO личность_журнал
+          (действие,обработано,последний_источник_ид)
+          VALUES('Проверено сохранение завершённых ответов',?,?)`).run(added,last);
+      }
+      this.база.exec('COMMIT');
+      return {обработано:messages.length,последний_ид:last};
+    }catch(err){this.база.exec('ROLLBACK');throw err;}
   }
 
   // A small, deterministic, source-preserving derived index. Called for new

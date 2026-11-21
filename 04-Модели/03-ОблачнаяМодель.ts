@@ -1,5 +1,4 @@
-import type { ПровайдерМодели } from './01-ПровайдерМодели.ts';
-import type { Сообщение } from '../02-Память/01-ПамятьДиалога.ts';
+import type { ПровайдерМодели, КонтекстМодели } from './01-ПровайдерМодели.ts';
 
 type Запрос = typeof fetch;
 type ОтветAPI = { choices?: Array<{ message?: { content?: unknown } }> };
@@ -66,7 +65,7 @@ export class ОблачнаяМодель implements ПровайдерМоде�
     return [...new Set(данные.data.map(x => x.id).filter((id): id is string => typeof id === 'string' && !!id.trim()))];
   }
 
-  async создатьОтвет(история: readonly Сообщение[], сигнал?: AbortSignal, максТокенов = 2500): Promise<string> {
+  async создатьОтвет(история: readonly КонтекстМодели[], сигнал?: AbortSignal, максТокенов = 2500): Promise<string> {
     if (!Number.isSafeInteger(максТокенов) || максТокенов < 1 || максТокенов > 8192) throw new Error('Недопустимый лимит токенов');
     const ответ = await this.выполнить('/chat/completions', {
       method: 'POST',
@@ -76,7 +75,7 @@ export class ОблачнаяМодель implements ПровайдерМоде�
         stream: false,
         max_tokens: максТокенов,
         messages: история.map(сообщение => ({
-          role: сообщение.роль === 'пользователь' ? 'user' : 'assistant',
+          role: сообщение.роль === 'система' ? 'system' : сообщение.роль === 'пользователь' ? 'user' : 'assistant',
           content: сообщение.текст
         }))
       }),
@@ -89,14 +88,14 @@ export class ОблачнаяМодель implements ПровайдерМоде�
   }
   // OpenAI-compatible Cloud.ru SSE: only [DONE] marks an atomic complete answer.
   async создатьОтветПотоком(
-    история: readonly Сообщение[], сигнал: AbortSignal|undefined,
+    история: readonly КонтекстМодели[], сигнал: AbortSignal|undefined,
     onChunk:(chunk:string)=>void, максТокенов=2500
   ):Promise<string>{
     if(!Number.isSafeInteger(максТокенов)||максТокенов<1||максТокенов>8192)throw new Error('Недопустимый лимит токенов');
     const response=await this.выполнить('/chat/completions',{
       method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
       body:JSON.stringify({model:this.модель,stream:true,max_tokens:максТокенов,
-        messages:история.map(m=>({role:m.роль==='пользователь'?'user':'assistant',content:m.текст}))}),
+        messages:история.map(m=>({role:m.роль==='система'?'system':m.роль==='пользователь'?'user':'assistant',content:m.текст}))}),
       signal:сигнал
     },60000);
     if(!response.body)throw new Error('Cloud.ru не вернул поток ответа');

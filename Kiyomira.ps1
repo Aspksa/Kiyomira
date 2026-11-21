@@ -254,7 +254,10 @@ function Check-Source {
     '08-Запуск/04-ВебСервер.cjs',
     '10-Веб/01-Страница.html',
     '10-Веб/02-Стиль.css',
-    '10-Веб/03-Приложение.js'
+    '10-Веб/03-Приложение.js',
+    '10-Веб/06-Личность.css',
+    '10-Веб/07-Личность.js',
+    '03-Личность/01-КогнитивнаяЛичность.ts'
   )
   New-Item -ItemType Directory -Force -Path $safeRoot | Out-Null
   $previous = @{}
@@ -291,7 +294,7 @@ function Check-Source {
   $tempManifest = "$manifest.новый"
   [IO.File]::WriteAllText($tempManifest, ((@{ files = $updated } | ConvertTo-Json -Depth 5)), (New-Object Text.UTF8Encoding($false)))
   Move-Item -LiteralPath $tempManifest -Destination $manifest -Force
-  foreach ($name in @('01-Ядро/01-Запуск.ts','02-Память/01-ПамятьДиалога.ts')) {
+  foreach ($name in @('01-Ядро/01-Запуск.ts','02-Память/01-ПамятьДиалога.ts','03-Личность/01-КогнитивнаяЛичность.ts')) {
     if (-not (Test-Path -LiteralPath (Join-Path $project $name))) { throw "Missing TypeScript source: $name" }
   }
 }

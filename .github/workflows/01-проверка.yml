@@ -53,7 +53,7 @@ jobs:
           foreach ($file in 'Kiyomira.bat','Kiyomira.ps1','Kiyomira.cjs','package.json') {
             Copy-Item -LiteralPath (Join-Path $source $file) -Destination $folder
           }
-          foreach ($sub in '01-Ядро','02-Память','03-Задачи','04-Модели','05-Проверки','08-Запуск','10-Веб') {
+          foreach ($sub in '01-Ядро','02-Память','03-Личность','03-Задачи','04-Модели','05-Проверки','08-Запуск','10-Веб') {
             Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $folder -Recurse
           }
           $tokens=$null
@@ -105,7 +105,7 @@ jobs:
           $longBase=Join-Path $env:RUNNER_TEMP ('Д' * 110)
           $longFolder=Join-Path $longBase ('П' * 106)
           New-Item -ItemType Directory -Path $longFolder -Force | Out-Null
-          foreach ($sub in '01-Ядро','02-Память','08-Запуск') {
+          foreach ($sub in '01-Ядро','02-Память','03-Личность','08-Запуск') {
             Copy-Item -LiteralPath (Join-Path $source $sub) -Destination $longFolder -Recurse
           }
           & node (Join-Path $longFolder '08-Запуск/02-Предпроверка.cjs')
