@@ -1,0 +1,68 @@
+/* Living Self: compact identity presence ABOVE the existing Canvas brain.
+ * Independent of the graph renderer and its pan/zoom surface. */
+.unified-workspace .persona-sky {
+  position:relative;z-index:8;flex:0 0 auto;min-height:98px;
+  display:flex;justify-content:center;align-items:center;
+  overflow:visible;padding:0 12px 1px;
+  --persona-accent:#caa468;
+}
+.persona-card{position:relative;z-index:4;min-width:0}
+.persona-card summary{
+  display:flex;gap:11px;align-items:center;cursor:pointer;list-style:none;
+  outline-offset:3px;padding:0 12px 0 0;border-radius:20px;
+  background:radial-gradient(ellipse at 24% 55%,rgba(183,132,63,.095),transparent 73%);
+  transition:background .25s ease;
+}
+.persona-card summary::-webkit-details-marker{display:none}
+.persona-card summary:focus-visible{outline:2px solid #d4b47b}
+.persona-card summary:hover{background:radial-gradient(ellipse at 24% 55%,rgba(222,171,93,.17),transparent 76%)}
+.persona-fox{width:124px;height:101px;flex-shrink:0;overflow:visible;
+  filter:drop-shadow(0 0 8px rgba(208,157,79,.24));}
+.persona-fox .persona-tails{transform-origin:71px 95px;animation:persona-tail-motion 6s ease-in-out infinite alternate}
+.persona-fox .persona-spark{animation:persona-spark-motion 3.2s ease-in-out infinite}
+.persona-text{display:flex;flex-direction:column;gap:8px;min-width:0}
+.persona-text strong{font-family:var(--font);font-size:clamp(12px,1vw,15px);font-weight:550;
+  letter-spacing:.20em;color:#eed3a0;text-shadow:0 0 17px rgba(221,158,61,.24)}
+.persona-text span{font-size:9px;letter-spacing:.11em;color:#8ebdb9;text-transform:uppercase}
+.persona-open{color:#ad9879;font-size:18px;opacity:.8}
+.persona-card[open] .persona-open{transform:rotate(180deg)}
+.persona-popover{
+  position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  width:min(340px,calc(100vw - 38px));max-height:min(290px,43vh);overflow:auto;
+  border:1px solid rgba(193,151,91,.35);border-radius:8px;
+  background:rgba(7,10,12,.98);box-shadow:0 14px 35px rgba(0,0,0,.8);
+  padding:15px 18px;color:#d6c5ae;font-size:11px;line-height:1.6;
+}
+.persona-popover-title{font-size:12px;font-weight:650;color:#e3c28c;letter-spacing:.08em;margin-bottom:9px}
+.persona-popover p{margin:5px 0;overflow-wrap:anywhere}
+.persona-bridge{
+  position:absolute;top:91%;left:50%;width:1px;height:35px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(221,178,94,.52),transparent);
+  box-shadow:0 0 10px rgba(213,154,74,.12);opacity:.6;
+}
+.persona-sky[data-phase="контекст"] .persona-bridge,
+.persona-sky[data-phase="генерация"] .persona-bridge{opacity:1;background:linear-gradient(180deg,#d8ae74,transparent)}
+.persona-sky[data-phase="генерация"] .persona-fox{filter:drop-shadow(0 0 13px rgba(232,177,92,.52))}
+.persona-sky[data-phase="persona-growth"] .persona-spark{fill:#f9dc97}
+.persona-sky[data-phase="ошибка"] .persona-text span{color:#dc947c}
+@keyframes persona-tail-motion {from{transform:rotate(-1.1deg)}to{transform:rotate(1.1deg)}}
+@keyframes persona-spark-motion {0%,100%{opacity:.25}50%{opacity:.85}}
+@media(max-height:680px){
+  .unified-workspace .persona-sky{min-height:70px}
+  .persona-fox{width:78px;height:70px}
+  .persona-text strong{font-size:11px}
+  .persona-text span{font-size:8px}
+  .persona-bridge{height:18px}
+}
+@media(max-width:700px){
+  .unified-workspace .persona-sky{min-height:78px;padding:0 6px}
+  .persona-fox{width:88px;height:76px}
+  .persona-card summary{gap:6px}
+  .persona-text strong{font-size:11px}
+  .persona-text span{font-size:8px;letter-spacing:.03em}
+  .persona-popover{left:50%}
+}
+@media(prefers-reduced-motion:reduce){
+  .persona-fox .persona-tails,.persona-fox .persona-spark{animation:none!important}
+  .persona-card summary{transition:none!important}
+}
