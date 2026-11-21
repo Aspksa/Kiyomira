@@ -148,6 +148,16 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.equal(persona.data.personality.опыта,0);
     assert.equal((await fetch(url('/api/personality'))).status,403);
     assert.equal((await request('/api/personality','POST',{})).status,404);
+
+    assert.equal((await request('/api/personality/learning','POST',{enabled:'false'})).status,400);
+    const paused=await request('/api/personality/learning','POST',{enabled:false});
+    assert.equal(paused.status,200);
+    assert.equal(paused.data.personality.развитие_включено,false);
+    assert.equal((await request('/api/personality')).data.personality.развитие_включено,false);
+    const resumed=await request('/api/personality/learning','POST',{enabled:true});
+    assert.equal(resumed.status,200);
+    assert.equal(resumed.data.personality.развитие_включено,true);
+
     const chats=await request('/api/chats');
     assert.deepEqual(chats.data.chats,[]);
     const first=await request('/api/chats','POST',{title:'Главный чат'});
