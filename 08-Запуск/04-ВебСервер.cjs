@@ -140,6 +140,10 @@ async function создатьВебСервер({ корень = resolve(__dirna
         return json(ответ,200,{ ready:true, provider:демоРежим ? 'demo' : ключ && модель ? 'cloud' : 'unconfigured', model:модель, keyPresent:!!ключ, verified:проверено, lastError:последняяОшибка, active:активные.size });
       }
       // Local diagnostics: only aggregate timings and process memory, no prompts or keys.
+      // Persona is a read-only projection; never expose raw private memory or prompts.
+      if (запрос.method === 'GET' && путь === '/api/personality') {
+        return json(ответ,200,{personality:ядро.личность.состояние()});
+      }
       if (запрос.method === 'GET' && путь === '/api/performance') {
         const mem=process.memoryUsage();
         return json(ответ,200,{uptimeSeconds:Math.round(process.uptime()),
@@ -148,7 +152,8 @@ async function создатьВебСервер({ корень = resolve(__dirna
           persistedMessages:база.размер(),brainEvents:событияМозга.length,
           memoryIndex:база.состояниеФоновойПамяти(),
           memorySearchTimings:база.профильПоиска(),
-          memoryIndexBatches:фоновыхПакетов,memoryIndexError:фоноваяОшибка});
+          memoryIndexBatches:фоновыхПакетов,memoryIndexError:фоноваяОшибка,
+          personalityPending:ядро.личность.состояние().ожидает});
       }
       if (запрос.method === 'GET' && путь === '/api/brain/events') {
         const since = Math.max(0, Number(url.searchParams.get('after'))||0);
@@ -463,7 +468,13 @@ async function создатьВебСервер({ корень = resolve(__dirna
     try{
       const result=база.обработатьФоновуюПамять(12);
       const graph=база.обработатьФоновыеРебра(6);
-      if(result.обработано||graph.обработано)фоновыхПакетов++;
+      const experience=ядро.личность.обработатьОпыт(6);
+      if(result.обработано||graph.обработано||experience.обработано)фоновыхПакетов++;
+      if(experience.обработано){
+        событияМозга.push({id:++номерСобытия,type:'persona-growth',at:Date.now(),
+          chatId:null,sources:[],processed:experience.обработано});
+        if(событияМозга.length>160)событияМозга.shift();
+      }
       фоноваяОшибка='';
     }catch(err){фоноваяОшибка=err instanceof Error?err.name:'background-error';}
   },1500);
