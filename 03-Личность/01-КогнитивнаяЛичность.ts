@@ -13,7 +13,7 @@ const IDENTITY = Object.freeze({
 
 export class КогнитивнаяЛичность {
   constructor(private readonly память:ПамятьДиалога){}
-  состояние(){return this.память.состояниеЛичности();}
+  состояние(){return {...this.память.состояниеЛичности(),характер:[...IDENTITY.характер],образ:IDENTITY.образ,принципы:[...IDENTITY.принципы]};}
   // Model instructions are separate from untrusted user messages and RAG text.
   инструкция():string{
     const status=this.состояние();
