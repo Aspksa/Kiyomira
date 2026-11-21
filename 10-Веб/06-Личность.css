@@ -66,3 +66,13 @@
   .persona-fox .persona-tails,.persona-fox .persona-spark{animation:none!important}
   .persona-card summary{transition:none!important}
 }
+
+.persona-learning-button{
+  width:100%;margin-top:9px;padding:8px 11px;
+  font:inherit;font-size:11px;border-radius:5px;
+  color:#e4c997;background:rgba(195,147,77,.08);
+  border:1px solid rgba(196,154,94,.4);cursor:pointer;
+}
+.persona-learning-button:focus-visible{outline:2px solid #ebce96;outline-offset:2px}
+.persona-learning-button:hover{background:rgba(195,147,77,.18)}
+.persona-learning-button:disabled{cursor:wait;opacity:.55}
