@@ -146,6 +146,12 @@ async function создатьВебСервер({ корень = resolve(__dirna
       if (запрос.method === 'GET' && путь === '/api/personality') {
         return json(ответ,200,{personality:ядро.личность.состояние()});
       }
+      if (запрос.method === 'POST' && путь === '/api/personality/learning') {
+        const body=await телоЗапроса(запрос);
+        if(typeof body.enabled!=='boolean'||Object.keys(body).length!==1)
+          throw ошибка('Ожидается булево enabled');
+        return json(ответ,200,{personality:ядро.личность.разрешитьРазвитие(body.enabled)});
+      }
       if (запрос.method === 'GET' && путь === '/api/performance') {
         const mem=process.memoryUsage();
         return json(ответ,200,{uptimeSeconds:Math.round(process.uptime()),
@@ -471,7 +477,13 @@ async function создатьВебСервер({ корень = resolve(__dirna
       const result=база.обработатьФоновуюПамять(12);
       const graph=база.обработатьФоновыеРебра(6);
       const experience=ядро.личность.обработатьОпыт(6);
-      if(result.обработано||graph.обработано||experience.обработано)фоновыхПакетов++;
+      const learning=ядро.личность.оценитьПоиск();
+      if(result.обработано||graph.обработано||experience.обработано||learning.проверено)фоновыхПакетов++;
+      if(learning.проверено){
+        событияМозга.push({id:++номерСобытия,type:'persona-experiment',at:Date.now(),
+          chatId:null,sources:[],samples:learning.проверено});
+        if(событияМозга.length>160)событияМозга.shift();
+      }
       if(experience.обработано){
         событияМозга.push({id:++номерСобытия,type:'persona-growth',at:Date.now(),
           chatId:null,sources:[],processed:experience.обработано});
