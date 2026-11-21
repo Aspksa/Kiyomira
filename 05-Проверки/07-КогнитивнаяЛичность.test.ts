@@ -111,3 +111,41 @@ test('Cloud.ru получает системную роль отдельно о�
   assert.equal(await client.создатьОтвет([{роль:'система',текст:'Ты Kiyomira'},{роль:'пользователь',текст:'Вопрос'}]),'Готово');
   assert.equal(checked,true);
 });
+
+test('Фоновое развитие можно остановить и продолжить без потери контрольной точки',()=>{
+  const memory=new ПамятьДиалога(30);
+  try{
+    const chat=memory.создатьДиалог('Контроль');
+    memory.добавитьПару('Тест','Готово',chat);
+    assert.equal(memory.настроитьРазвитиеЛичности(false).развитие_включено,false);
+    assert.equal(memory.обработатьОпытЛичности().обработано,0);
+    assert.equal(memory.состояниеЛичности().ожидает,1);
+    assert.deepEqual(memory.экспериментКачестваПоиска(),{проверено:0,причина:'пауза'});
+    assert.equal(memory.настроитьРазвитиеЛичности(true).развитие_включено,true);
+    assert.equal(memory.обработатьОпытЛичности().обработано,1);
+    assert.equal(memory.состояниеЛичности().ожидает,0);
+    assert.throws(()=>memory.настроитьРазвитиеЛичности('on' as unknown as boolean));
+  }finally{memory.закрыть();}
+});
+
+test('Локальная проверка поиска использует утверждённые факты и не меняет их статусы',()=>{
+  const memory=new ПамятьДиалога(70);
+  try{
+    const chat=memory.создатьДиалог('Тестовая оценка');
+    memory.добавитьПару('Платформа: SQLite','Да',chat);
+    memory.добавитьПару('Проект: Kiyomira','Да',chat);
+    memory.добавитьПару('Интерфейс: Canvas','Да',chat);
+    const facts=memory.кандидатыФактов(10);
+    assert.equal(facts.length,3);
+    for(const fact of facts)memory.изменитьФакт(fact.ид,'подтверждено');
+    const before=memory.размер();
+    const result=memory.экспериментКачестваПоиска();
+    assert.equal(result.проверено,3);
+    assert.ok(result.текущая>=0&&result.текущая<=3);
+    assert.ok(result.кандидат>=0&&result.кандидат<=3);
+    assert.equal(memory.экспериментКачестваПоиска().проверено,0);
+    assert.equal(memory.состояниеЛичности().эксперименты.length,1);
+    assert.equal(memory.размер(),before);
+    assert.ok(memory.кандидатыФактов().every(x=>x.статус==='подтверждено'));
+  }finally{memory.закрыть();}
+});
