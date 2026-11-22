@@ -11,6 +11,6 @@
     "test": "node --experimental-transform-types --test 05-Проверки/01-Ядро.test.ts 05-Проверки/02-ПамятьИОблако.test.ts 05-Проверки/03-Запуск.test.cjs 05-Проверки/04-РезервSQLite.test.cjs 05-Проверки/05-Веб.test.cjs 05-Проверки/06-RAGИПрофилирование.test.ts",
     "preflight": "node 08-Запуск/02-Предпроверка.cjs",
     "web": "node --experimental-transform-types 08-Запуск/04-ВебСервер.cjs",
-    "check-web": "node --check 08-Запуск/04-ВебСервер.cjs && node --check 10-Веб/03-Приложение.js && node --check 10-Веб/07-Личность.js && node --check 08-Запуск/01-Пуск.cjs"
+    "check-web": "node --check 08-Запуск/04-ВебСервер.cjs && node --check 10-Веб/03-Приложение.js && node --check 10-Веб/07-Личность.js && node --check 10-Веб/08-Эволюция.js && node --check 08-Запуск/01-Пуск.cjs"
   }
 }
