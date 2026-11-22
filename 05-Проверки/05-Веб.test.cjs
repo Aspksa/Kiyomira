@@ -23,7 +23,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(html,/Kiyomira — когнитивная система/);
     assert.match(html,/id="workspace-divider"/);
     assert.match(html,/id="persona-sky"/);
-    assert.match(html,/class="persona-fox"/);
+    assert.doesNotMatch(html,/class="persona-fox"/);
+    assert.match(html,/id="persona-learning-toggle"/);
+    assert.match(html,/id="persona-state"/);
     assert.match(html,/07-Личность.js/);
     assert.match(html,/unified-workspace/);
     assert.match(html,/id="brain-auto-layout"/);
@@ -101,7 +103,9 @@ test('веб API: сессия, история, поиск, Cloud.ru секре�
     assert.match(await personaAsset.text(),/KiyomiraPersona/);
     const personaCss=await fetch(url('/06-Личность.css'));
     assert.equal(personaCss.status,200);
-    assert.match(await personaCss.text(),/prefers-reduced-motion/);
+    const cleanPersonaCss=await personaCss.text();
+    assert.match(cleanPersonaCss,/prefers-reduced-motion/);
+    assert.doesNotMatch(cleanPersonaCss,/persona-tails|persona-spark|persona-fox/);
     const cssAsset=await fetch(url('/02-Стиль.css'));
     assert.equal(cssAsset.status,200);
     const unifiedAsset=await fetch(url('/05-ЕдиныйИнтерфейс.css'));
