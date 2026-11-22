@@ -471,6 +471,9 @@ export class ПамятьДиалога {
     const cursor=(this.база.prepare(`SELECT последний_ид FROM личность_контрольные_точки
       WHERE имя='assistant-answers'`).get() as {последний_ид:number}).последний_ид;
     const learningEnabled=this.разрешеноРазвитиеЛичности();
+    const summary=this.база.prepare(`SELECT count(*) AS всего,
+      coalesce(sum(CASE WHEN результат='кандидат_лучше_на_образцах' THEN 1 ELSE 0 END),0) AS лучше_на_образцах
+      FROM личность_эксперименты`).get() as {всего:number;лучше_на_образцах:number};
     const experiments=this.база.prepare(`SELECT ид,образцов,точность_текущая,
       точность_кандидат,результат,создано
       FROM личность_эксперименты ORDER BY ид DESC LIMIT 3`).all();
@@ -480,7 +483,8 @@ export class ПамятьДиалога {
     return {имя:core.имя,версия:core.версия,создано:core.создано,
       состояние:'ожидание',опыта:count,ожидает:pending,
       цели:goals,навыки:skills,события:events,развитие_включено:learningEnabled,
-      эксперименты:experiments,
+      эксперименты:experiments,экспериментов_всего:summary.всего,
+      улучшений_на_образцах:summary.лучше_на_образцах,
       правила:'Изменения характера, кода, полномочий и платных вызовов требуют одобрения'};
   }
 
