@@ -787,7 +787,8 @@ window.KiyomiraDiagnostics={
     const server=await api('/api/performance');
     const canvas=window.KiyomiraBrain?.getViewportStats?.()||{};
     const unity=window.KiyomiraUnity?.getStats?.()||{};
-    return {server,canvas,unity,workspace:window.KiyomiraLayout?.getState?.()||{}};
+    const evolution=window.KiyomiraEvolution?.getState?.()||{};
+    return {server,canvas,unity,evolution,workspace:window.KiyomiraLayout?.getState?.()||{}};
   }
 };
 
