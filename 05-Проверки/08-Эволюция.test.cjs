@@ -102,3 +102,35 @@ test('Ascension respects reduced-motion preference and zero sized panels',()=>{
   window.KiyomiraEvolution.eventActivity({type:'генерация'});
   assert.equal(frameCount,0);
 });
+
+test('Unified personality overlays the brain without replacing its interactive Canvas',()=>{
+  const source=readFileSync(join(__dirname,'../10-Веб/08-Эволюция.js'),'utf8');
+  const css=readFileSync(join(__dirname,'../10-Веб/06-Личность.css'),'utf8');
+  assert.match(css,/\.unified-workspace \.persona-evolution-stage\s*\{\s*position:absolute;/);
+  assert.match(css,/\.unified-workspace \.persona-evolution-canvas\s*\{[^}]*pointer-events:none/);
+  const points=[];
+  const gradient={addColorStop(){}};
+  const ctx=new Proxy({
+    createRadialGradient(){return gradient;},
+    createLinearGradient(){return gradient;},
+    arc(x,y,r){points.push({x,y,r});}
+  },{get(target,key){return target[key]||(()=>{});}});
+  const panel={getBoundingClientRect:()=>({left:0,top:0,width:500,height:700})};
+  const canvas={parentElement:panel,getContext:()=>ctx};
+  const nodes={
+    'persona-evolution-canvas':canvas,
+    'persona-evolution-stage':{getBoundingClientRect:()=>({left:0,top:52,width:500,height:590,bottom:642})},
+    'persona-evolution-caption':{textContent:''},
+    'brain-canvas':{getBoundingClientRect:()=>({left:0,top:52,width:500,height:590,bottom:642})}
+  };
+  const window={devicePixelRatio:1,matchMedia:()=>({matches:true,addEventListener(){}}),
+    KiyomiraBrain:{getCorePosition:()=>({x:240,y:370})},addEventListener(){}};
+  vm.runInNewContext(source,{
+    window,document:{hidden:false,getElementById:id=>nodes[id],addEventListener(){}},
+    performance:{now:()=>100},requestAnimationFrame(){return 1;},cancelAnimationFrame(){},
+    setInterval(){return 1;},clearInterval(){},
+    ResizeObserver:class{observe(){}disconnect(){}},Math,Number,Array,Set,Object,String
+  },{filename:'08-Эволюция.js',timeout:2500});
+  assert.ok(points.some(p=>Math.abs(p.x-240)<1&&p.y<370&&p.y>200),
+    'Personality root must follow the real brain core inside its viewport');
+});
