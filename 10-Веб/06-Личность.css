@@ -113,3 +113,17 @@
 @media(prefers-reduced-motion:reduce){
   .unified-workspace .persona-evolution-canvas{animation:none!important;transition:none!important}
 }
+
+/* Unified Soul Core: personality is an overlay inside the existing brain, not a second panel. */
+.unified-workspace .brain-panel{position:relative;isolation:isolate}
+.unified-workspace .persona-evolution-stage{
+  position:absolute;top:52px;bottom:58px;left:0;right:0;
+  height:auto;min-height:0;max-height:none;z-index:3;
+  pointer-events:none;overflow:visible;
+}
+.unified-workspace .persona-evolution-canvas{position:absolute;inset:0;z-index:2;pointer-events:none}
+.unified-workspace .brain-stage{flex:1 1 0;min-height:0;z-index:1}
+.unified-workspace .persona-evolution-caption{bottom:3px;left:14px;max-width:calc(100% - 28px)}
+@media(max-height:630px){
+  .unified-workspace .persona-evolution-stage{top:40px;bottom:42px;height:auto;min-height:0}
+}
