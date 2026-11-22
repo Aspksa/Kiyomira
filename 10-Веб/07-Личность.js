@@ -1,6 +1,6 @@
 'use strict';
-// Kiyomira's image is a UI character; the state shown below is only
-// evidence-backed application activity, not a claimed inner consciousness.
+// Kiyomira's personal state is a source-backed software model, not consciousness.
+// The new Ascension layer uses verified SQLite aggregates for visible growth.
 (() => {
   const root=document.getElementById('persona-sky');
   if(!root)return;
@@ -31,6 +31,7 @@
       if(!response.ok)throw Error('Недоступна личная память');
       const data=(await response.json()).personality;
       if(!data)return;
+      window.KiyomiraEvolution?.update(data);
       enabled=data.развитие_включено!==false;
       toggle.textContent=enabled?'Приостановить фоновое развитие':'Возобновить фоновое развитие';
       toggle.setAttribute('aria-pressed',String(!enabled));

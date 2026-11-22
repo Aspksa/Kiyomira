@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/05-ЕдиныйИнтерфейс.css">
 <link rel="stylesheet" href="/06-Личность.css">
 <script src="/04-Мозг.js" defer></script>
+<script src="/08-Эволюция.js" defer></script>
 <script src="/07-Личность.js" defer></script>
 <script src="/03-Приложение.js" defer></script>
 </head>
@@ -47,7 +48,9 @@
       <canvas id="cognitive-comets" class="cognitive-comets" aria-hidden="true"></canvas>
       <section class="brain-panel" aria-label="Визуальная карта диалогов">
         <header class="brain-head"><div><div class="section-kicker">COGNITIVE CORE / SQLITE · КЛАСТЕРЫ</div><h1>Мозг Kiyomira</h1></div><span id="brain-live" class="brain-live">ОЖИДАНИЕ</span></header>
-        <div class="persona-sky" id="persona-sky" data-phase="idle">
+        <canvas id="persona-evolution-canvas" class="persona-evolution-canvas" aria-hidden="true"></canvas>
+        <div class="persona-evolution-stage" id="persona-evolution-stage" aria-label="Растущая личность Kiyomira над мозгом">
+          <div class="persona-sky" id="persona-sky" data-phase="idle">
           <details class="persona-card" id="persona-card">
             <summary aria-label="Открыть состояние личности Kiyomira">
               <span class="persona-text"><strong>KIYOMIRA</strong><span id="persona-state">ЛИЧНОСТЬ · ОЖИДАНИЕ</span></span>
@@ -63,6 +66,8 @@
               <button type="button" id="persona-learning-toggle" class="persona-learning-button">Приостановить фоновое развитие</button>
             </div>
           </details>
+          </div>
+          <div id="persona-evolution-caption" class="persona-evolution-caption" role="status" aria-live="off">Ядро личности · ожидает подтверждённого опыта</div>
         </div>
         <div class="brain-stage"><canvas id="brain-canvas" aria-label="Интерактивная карта диалогов и сообщений"></canvas></div>
         <div class="brain-controls" role="group" aria-label="Режим карты">

@@ -12,7 +12,8 @@ const TYPES = {
   '/03-Приложение.js': ['10-Веб/03-Приложение.js', 'text/javascript; charset=utf-8'],
   '/04-Мозг.js': ['10-Веб/04-Мозг.js', 'text/javascript; charset=utf-8'],
   '/06-Личность.css': ['10-Веб/06-Личность.css', 'text/css; charset=utf-8'],
-  '/07-Личность.js': ['10-Веб/07-Личность.js', 'text/javascript; charset=utf-8']
+  '/07-Личность.js': ['10-Веб/07-Личность.js', 'text/javascript; charset=utf-8'],
+  '/08-Эволюция.js': ['10-Веб/08-Эволюция.js', 'text/javascript; charset=utf-8']
 };
 
 function json(ответ, статус, данные) {

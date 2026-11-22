@@ -113,6 +113,7 @@ async function pollBrainEvents() {
     state.brainEventId=event.id;
     window.KiyomiraBrain?.eventActivity(event);
     window.KiyomiraPersona?.eventActivity(event);
+    window.KiyomiraEvolution?.eventActivity(event);
     el('workspace').dataset.activity=event.type;
     if(event.type==='контекст')window.KiyomiraUnity?.signal('recall',event.sources||[]);
     if(event.type==='ответ')window.KiyomiraUnity?.signal('answer');
@@ -786,7 +787,8 @@ window.KiyomiraDiagnostics={
     const server=await api('/api/performance');
     const canvas=window.KiyomiraBrain?.getViewportStats?.()||{};
     const unity=window.KiyomiraUnity?.getStats?.()||{};
-    return {server,canvas,unity,workspace:window.KiyomiraLayout?.getState?.()||{}};
+    const evolution=window.KiyomiraEvolution?.getState?.()||{};
+    return {server,canvas,unity,evolution,workspace:window.KiyomiraLayout?.getState?.()||{}};
   }
 };
 

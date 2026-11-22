@@ -257,6 +257,7 @@ function Check-Source {
     '10-Веб/03-Приложение.js',
     '10-Веб/06-Личность.css',
     '10-Веб/07-Личность.js',
+    '10-Веб/08-Эволюция.js',
     '03-Личность/01-КогнитивнаяЛичность.ts'
   )
   New-Item -ItemType Directory -Force -Path $safeRoot | Out-Null
