@@ -54,13 +54,17 @@
   function metrics(){
     const b=panel.getBoundingClientRect(),s=stage.getBoundingClientRect(),
       r=brainCanvas.getBoundingClientRect();
-    const rootX=clamp((s.left+s.width*.5)-b.left,16,Math.max(16,b.width-16));
-    const rootY=s.bottom-b.top-Math.min(16,Math.max(6,s.height*.1));
     const core=window.KiyomiraBrain?.getCorePosition?.();
     const bx=clamp((core?.x??(r.left+r.width*.5))-b.left,7,Math.max(7,b.width-7));
     const by=clamp((core?.y??(r.top+r.height*.5))-b.top,
       r.top-b.top+5,Math.max(r.top-b.top+5,r.bottom-b.top-5));
-    return {rootX,rootY,bx,by,stageH:s.height,
+    // The personality is projected into the SAME brain viewport, above its real core.
+    // Keep the graph interactive: this Canvas never receives pointer events.
+    const integrated=s.height>0&&s.height>=r.height*.65;
+    const rootX=integrated?bx:clamp((s.left+s.width*.5)-b.left,16,Math.max(16,b.width-16));
+    const rootY=integrated?clamp(by-Math.min(110,r.height*.22),r.top-b.top+12,by-8):
+      s.bottom-b.top-Math.min(16,Math.max(6,s.height*.1));
+    return {rootX,rootY,bx,by,stageH:integrated?r.height*.43:s.height,
       stageTop:s.top-b.top,stageBottom:s.bottom-b.top,panelW:b.width};
   }
   function size(){
